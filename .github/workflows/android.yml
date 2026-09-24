@@ -19,7 +19,58 @@ jobs:
 
       - name: Patch uNN.pas to remove x86 AVX2 ASM
         run: |
-          python3 patch_uNN.py
+          python3 - << 'PYEOF'
+          import re
+
+          def patch_uNN(filename='uNN.pas'):
+              with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
+                  content = f.read()
+
+              # 1. Remove 'nostackframe assembler;' and 'assembler;' from function signatures
+              # This prevents FPC from expecting an asm block.
+              content = re.sub(r'nostackframe\s+assembler\s*;', '', content, flags=re.IGNORECASE)
+              content = re.sub(r'assembler\s*;', '', content, flags=re.IGNORECASE)
+
+              # 2. Replace asm...end; blocks with basic Pascal begin...end;
+              lines = content.split('\n')
+              out_lines = []
+              in_asm = False
+              is_func = False
+
+              for line in lines:
+                  stripped = line.strip()
+
+                  # Track if we are inside a Function to set the Result variable
+                  if not in_asm:
+                      if 'function ' in line.lower():
+                          is_func = True
+                      elif 'procedure ' in line.lower():
+                          is_func = False
+
+                  # Detect start of asm block
+                  if not in_asm and (stripped.lower() == 'asm' or stripped.lower().startswith('asm ')):
+                      in_asm = True
+                      out_lines.append('begin')
+                      if is_func:
+                          out_lines.append('  Result := 0;') # Return 0 for NNUE functions
+                      continue
+
+                  # Detect end of asm block
+                  if in_asm:
+                      if stripped.lower() == 'end;':
+                          in_asm = False
+                          out_lines.append('end;')
+                      # Skip everything else inside the asm block
+                      continue
+
+                  out_lines.append(line)
+
+              with open(filename, 'w', encoding='utf-8') as f:
+                  f.write('\n'.join(out_lines))
+              print("Patched uNN.pas successfully.")
+
+          patch_uNN()
+          PYEOF
 
       - name: Build Booot
         run: |
