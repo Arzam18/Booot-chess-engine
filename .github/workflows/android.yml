@@ -14,6 +14,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Python
+        run: apt-get update && apt-get install -y python3
+
+      - name: Patch uNN.pas to remove x86 AVX2 ASM
+        run: |
+          python3 patch_uNN.py
+
       - name: Build Booot
         run: |
           fpc -Mdelphi -Tandroid -Paarch64 -O2 -XX -CX booot7.dpr
