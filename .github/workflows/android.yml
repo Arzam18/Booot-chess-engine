@@ -1,0 +1,25 @@
+name: Build Booot for Android (AArch64)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    container:
+      image: suvepl/fpc-for-android:bare
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Booot
+        run: |
+          fpc -Mdelphi -Tandroid -Paarch64 -O2 -XX -CX booot7.dpr
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: booot7-android-aarch64
+          path: booot7
