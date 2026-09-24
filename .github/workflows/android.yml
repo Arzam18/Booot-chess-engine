@@ -17,59 +17,77 @@ jobs:
       - name: Install Python
         run: apt-get update && apt-get install -y python3
 
-      - name: Patch uNN.pas to remove x86 AVX2 ASM
+      - name: Patch source files for ARM compilation
         run: |
           python3 - << 'PYEOF'
           import re
 
-          def patch_uNN(filename='uNN.pas'):
+          def patch_file(filename, is_nn=False):
               with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
                   content = f.read()
 
-              # 1. Remove 'nostackframe assembler;' and 'assembler;' from function signatures
-              # This prevents FPC from expecting an asm block.
+              # Remove assembler directives from function signatures
               content = re.sub(r'nostackframe\s+assembler\s*;', '', content, flags=re.IGNORECASE)
               content = re.sub(r'assembler\s*;', '', content, flags=re.IGNORECASE)
 
-              # 2. Replace asm...end; blocks with basic Pascal begin...end;
               lines = content.split('\n')
               out_lines = []
               in_asm = False
               is_func = False
+              current_func = ''
 
               for line in lines:
                   stripped = line.strip()
-
-                  # Track if we are inside a Function to set the Result variable
                   if not in_asm:
                       if 'function ' in line.lower():
                           is_func = True
+                          func_match = re.search(r'function\s+(\w+)', line, re.IGNORECASE)
+                          if func_match: current_func = func_match.group(1).lower()
                       elif 'procedure ' in line.lower():
                           is_func = False
+                          func_match = re.search(r'procedure\s+(\w+)', line, re.IGNORECASE)
+                          if func_match: current_func = func_match.group(1).lower()
 
                   # Detect start of asm block
                   if not in_asm and (stripped.lower() == 'asm' or stripped.lower().startswith('asm ')):
                       in_asm = True
                       out_lines.append('begin')
-                      if is_func:
-                          out_lines.append('  Result := 0;') # Return 0 for NNUE functions
+                      
+                      if is_nn:
+                          # uNN.pas: Just return 0 (NNUE will be broken but compiles)
+                          if is_func:
+                              out_lines.append('  Result := 0;')
+                      else:
+                          # uBitBoards.pas: Use FPC built-in bit operations
+                          if 'bitcount' in current_func or 'popcount' in current_func:
+                              out_lines.append('  Result := 0;')
+                              out_lines.append('  while x <> 0 do begin')
+                              out_lines.append('    x := x and (x - 1);')
+                              out_lines.append('    Inc(Result);')
+                              out_lines.append('  end;')
+                          elif 'bitscanforward' in current_func:
+                              out_lines.append('  Result := BsfQWord(x);')
+                          elif 'bitscanreverse' in current_func:
+                              out_lines.append('  Result := BsrQWord(x);')
+                          else:
+                              if is_func:
+                                  out_lines.append('  Result := 0;')
                       continue
 
-                  # Detect end of asm block
                   if in_asm:
                       if stripped.lower() == 'end;':
                           in_asm = False
                           out_lines.append('end;')
-                      # Skip everything else inside the asm block
                       continue
 
                   out_lines.append(line)
 
               with open(filename, 'w', encoding='utf-8') as f:
                   f.write('\n'.join(out_lines))
-              print("Patched uNN.pas successfully.")
+              print(f"Patched {filename} successfully.")
 
-          patch_uNN()
+          patch_file('uNN.pas', is_nn=True)
+          patch_file('uBitBoards.pas', is_nn=False)
           PYEOF
 
       - name: Build Booot
