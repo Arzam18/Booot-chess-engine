@@ -12,6 +12,8 @@ on:
 
 jobs:
   build-android:
+    # FPC 3.2.0 provides an x86_64 Linux host compiler.
+    # The AArch64 Android compiler is a cross compiler running on x86_64 Linux.
     runs-on: ubuntu-24.04
 
     steps:
@@ -25,10 +27,6 @@ jobs:
           sudo apt-get update
 
           sudo apt-get install -y \
-            fpc \
-            fp-units-base \
-            fp-units-fcl \
-            fp-units-misc \
             curl \
             tar \
             unzip \
@@ -36,209 +34,298 @@ jobs:
             file \
             binutils-aarch64-linux-gnu
 
-          echo "Native Free Pascal:"
-          fpc -iV
-          file "$(command -v fpc)"
-
-      - name: Locate Android NDK
+      # ------------------------------------------------------------
+      # Free Pascal 3.2.0 host compiler
+      # ------------------------------------------------------------
+      - name: Download Free Pascal 3.2.0 host compiler
         run: |
           set -euxo pipefail
 
-          SDK_ROOT="/usr/local/lib/android/sdk"
+          FPC_HOST_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-x86_64-linux.tar"
 
-          echo "Android SDK:"
-          ls -la "$SDK_ROOT"
+          curl -L --fail --retry 3 \
+            -o /tmp/fpc-host.tar \
+            "$FPC_HOST_URL"
 
-          echo
-          echo "Installed NDK versions:"
-
-          find "$SDK_ROOT/ndk" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            -print \
-            2>/dev/null || true
-
-          NDK_DIR="$(find "$SDK_ROOT/ndk" \
-            -mindepth 1 \
-            -maxdepth 1 \
-            -type d \
-            | sort -V \
-            | tail -1)"
-
-          if [ -z "$NDK_DIR" ]; then
-            echo "ERROR: Android NDK was not found."
-            exit 1
-          fi
-
-          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
-
-          echo
-          echo "Using NDK:"
-          echo "$NDK_DIR"
-
-      - name: Download Free Pascal AArch64 Android cross compiler
-        run: |
-          set -euxo pipefail
-
-          CROSS_URL="https://downloads.freepascal.org/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar"
-
-          curl -L \
-            --fail \
-            --retry 3 \
-            -o /tmp/fpc-aarch64-cross.tar \
-            "$CROSS_URL"
-
-          mkdir -p "$HOME/fpc-aarch64-cross"
+          mkdir -p "$HOME/fpc"
 
           tar -xf \
-            /tmp/fpc-aarch64-cross.tar \
-            -C "$HOME/fpc-aarch64-cross"
+            /tmp/fpc-host.tar \
+            -C "$HOME/fpc"
 
-      - name: Locate AArch64 cross compiler
+          echo "FPC host package extracted:"
+          find "$HOME/fpc" -maxdepth 4 -type f \
+            \( -name fpc -o -name ppcx64 \) \
+            -print
+
+      # ------------------------------------------------------------
+      # Free Pascal 3.2.0 AArch64 Android cross compiler
+      #
+      # This exact package exists in the official 3.2.0 archive.
+      # ------------------------------------------------------------
+      - name: Download Free Pascal 3.2.0 AArch64 Android cross compiler
         run: |
           set -euxo pipefail
 
-          CROSS_FPC="$(find "$HOME/fpc-aarch64-cross" \
+          CROSS_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar"
+
+          curl -L --fail --retry 3 \
+            -o /tmp/fpc-aarch64-android-cross.tar \
+            "$CROSS_URL"
+
+          tar -xf \
+            /tmp/fpc-aarch64-android-cross.tar \
+            -C "$HOME/fpc"
+
+          echo
+          echo "AArch64 Android cross compiler:"
+          find "$HOME/fpc" -type f \
+            \( -name ppcrossa64 -o -name '*aarch64-android*' \) \
+            -print
+
+      # ------------------------------------------------------------
+      # Locate FPC
+      # ------------------------------------------------------------
+      - name: Locate Free Pascal
+        id: fpc
+        run: |
+          set -euxo pipefail
+
+          FPC_BIN="$(find "$HOME/fpc" \
+            -type f \
+            -name fpc \
+            -perm -111 \
+            | head -1)"
+
+          CROSS_FPC="$(find "$HOME/fpc" \
             -type f \
             -name ppcrossa64 \
             -perm -111 \
             | head -1)"
 
-          if [ -z "$CROSS_FPC" ]; then
-            echo "ERROR: ppcrossa64 not found."
+          test -n "$FPC_BIN"
+          test -n "$CROSS_FPC"
 
-            find "$HOME/fpc-aarch64-cross" \
-              -maxdepth 7 \
-              -type f \
-              | head -200
+          echo "FPC_BIN=$FPC_BIN"
+          echo "CROSS_FPC=$CROSS_FPC"
 
-            exit 1
-          fi
-
-          echo "CROSS_FPC=$CROSS_FPC" >> "$GITHUB_ENV"
-
-          echo "Cross compiler:"
+          file "$FPC_BIN"
           file "$CROSS_FPC"
 
-      - name: Locate AArch64 Android RTL
+          "$FPC_BIN" -iV
+          "$CROSS_FPC" -iV
+
+          echo "FPC_BIN=$FPC_BIN" >> "$GITHUB_ENV"
+          echo "CROSS_FPC=$CROSS_FPC" >> "$GITHUB_ENV"
+
+      # ------------------------------------------------------------
+      # Download Android NDK r20
+      #
+      # FPC 3.2.0's Android support expects the older NDK layout:
+      #
+      #   platforms/android-21/arch-arm64/
+      #
+      # and the aarch64-linux-android-* toolchain.
+      # ------------------------------------------------------------
+      - name: Download Android NDK r20
         run: |
           set -euxo pipefail
 
-          RTL_DIR="$(find "$HOME/fpc-aarch64-cross" \
-            -type d \
-            -path '*aarch64-android*' \
-            | grep '/units/aarch64-android$' \
-            | head -1)"
+          NDK_URL="https://dl.google.com/android/repository/android-ndk-r20-linux-x86_64.zip"
 
-          if [ -z "$RTL_DIR" ]; then
-            echo "ERROR: AArch64 Android RTL not found."
+          curl -L --fail --retry 3 \
+            -o /tmp/android-ndk-r20.zip \
+            "$NDK_URL"
 
-            find "$HOME/fpc-aarch64-cross" \
-              -type d \
-              | grep -E 'aarch64|android' \
-              | head -200
+          mkdir -p "$HOME/android"
 
-            exit 1
-          fi
+          unzip -q \
+            /tmp/android-ndk-r20.zip \
+            -d "$HOME/android"
 
-          echo "RTL_DIR=$RTL_DIR" >> "$GITHUB_ENV"
+          test -d "$HOME/android/android-ndk-r20"
 
-          echo "RTL:"
-          echo "$RTL_DIR"
+          echo "ANDROID_NDK_HOME=$HOME/android/android-ndk-r20" >> "$GITHUB_ENV"
 
-      - name: Locate Android linker
+      # ------------------------------------------------------------
+      # Configure Android AArch64 binutils
+      # ------------------------------------------------------------
+      - name: Configure Android AArch64 toolchain
         run: |
           set -euxo pipefail
 
-          TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64"
+          NDK="$ANDROID_NDK_HOME"
 
-          test -d "$TOOLCHAIN"
+          echo "NDK:"
+          echo "$NDK"
 
-          AARCH64_CLANG="$TOOLCHAIN/bin/aarch64-linux-android24-clang"
+          echo
+          echo "Searching for AArch64 Android toolchain..."
 
-          test -x "$AARCH64_CLANG"
+          TOOLCHAIN_BIN="$(
+            find "$NDK/toolchains" \
+              -type f \
+              -name 'aarch64-linux-android-ld' \
+              -perm -111 \
+              -printf '%h\n' \
+              | head -1
+          )"
 
-          echo "TOOLCHAIN=$TOOLCHAIN" >> "$GITHUB_ENV"
+          test -n "$TOOLCHAIN_BIN"
 
-          echo "Android AArch64 compiler:"
-          "$AARCH64_CLANG" --version
+          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
 
+          echo "$TOOLCHAIN_BIN" >> "$GITHUB_PATH"
+
+          echo
+          echo "Android AArch64 tools:"
+          command -v aarch64-linux-android-as
+          command -v aarch64-linux-android-ld
+          command -v aarch64-linux-android-ar
+          command -v aarch64-linux-android-ranlib
+
+          file "$(command -v aarch64-linux-android-as)"
+          file "$(command -v aarch64-linux-android-ld)"
+
+      # ------------------------------------------------------------
+      # Verify the old NDK layout required by FPC 3.2.0
+      # ------------------------------------------------------------
+      - name: Verify Android NDK layout
+        run: |
+          set -euxo pipefail
+
+          NDK="$ANDROID_NDK_HOME"
+
+          test -d "$NDK/platforms/android-21"
+          test -d "$NDK/platforms/android-21/arch-arm64"
+
+          test -f \
+            "$NDK/platforms/android-21/arch-arm64/usr/lib/crtbegin_so.o"
+
+          test -f \
+            "$NDK/platforms/android-21/arch-arm64/usr/lib/crtend_so.o"
+
+          echo "Android API 21 AArch64 sysroot found."
+
+          echo
+          echo "AArch64 Android libraries:"
+          ls -lh \
+            "$NDK/platforms/android-21/arch-arm64/usr/lib" \
+            | head -30
+
+      # ------------------------------------------------------------
+      # Build Booot
+      # ------------------------------------------------------------
       - name: Build Booot
         run: |
           set -euxo pipefail
 
           mkdir -p build
 
-          echo "Free Pascal:"
-          fpc -iV
+          NDK="$ANDROID_NDK_HOME"
+          SYSROOT="$NDK/platforms/android-21/arch-arm64"
+          ANDROID_LIB="$SYSROOT/usr/lib"
+
+          echo "Host FPC:"
+          "$FPC_BIN" -iV
 
           echo
           echo "Cross compiler:"
-          file "$CROSS_FPC"
+          "$CROSS_FPC" -iV
 
           echo
-          echo "Building Booot..."
+          echo "Building Booot for AArch64 Android..."
 
-          "$CROSS_FPC" \
+          "$FPC_BIN" \
             -Tandroid \
+            -Paarch64 \
             -O3 \
             -OoREGVAR \
             -OoLOOPUNROLL \
+            -Xs \
             -dBOOOT_ARM64 \
-            -Fu"$RTL_DIR" \
+            -dANDROID \
+            -Fu"$HOME/fpc/lib/fpc/3.2.0/units/aarch64-android/*" \
             -FEbuild \
+            -FUbuild/units \
+            -XPaarch64-linux-android- \
+            -Xr \
+            -k"--sysroot=$SYSROOT" \
+            -Fl"$ANDROID_LIB" \
+            -Fl"$ANDROID_LIB/../../../../lib" \
+            -Fi"$SYSROOT/usr/include" \
+            -Fu"$HOME/fpc/lib/fpc/3.2.0/units/aarch64-android" \
+            -dRELEASE \
             booot7.dpr
 
+      # ------------------------------------------------------------
+      # If the wrapper FPC executable does not automatically invoke
+      # the cross compiler, explicitly retry with ppcrossa64.
+      # ------------------------------------------------------------
+      - name: Verify and recover cross-compiler output
+        run: |
+          set -euxo pipefail
+
+          if [ ! -f build/booot7 ]; then
+            echo "Normal FPC invocation did not produce build/booot7."
+            echo "Trying the AArch64 cross compiler directly..."
+
+            NDK="$ANDROID_NDK_HOME"
+            SYSROOT="$NDK/platforms/android-21/arch-arm64"
+            ANDROID_LIB="$SYSROOT/usr/lib"
+
+            "$CROSS_FPC" \
+              -Tandroid \
+              -Paarch64 \
+              -O3 \
+              -OoREGVAR \
+              -OoLOOPUNROLL \
+              -Xs \
+              -dBOOOT_ARM64 \
+              -dANDROID \
+              -FEbuild \
+              -FUbuild/units \
+              -XPaarch64-linux-android- \
+              -Xr \
+              -k"--sysroot=$SYSROOT" \
+              -Fl"$ANDROID_LIB" \
+              -Fi"$SYSROOT/usr/include" \
+              -dRELEASE \
+              booot7.dpr
+          fi
+
+          test -f build/booot7
+          test -x build/booot7
+
+      # ------------------------------------------------------------
+      # Verify executable
+      # ------------------------------------------------------------
       - name: Verify executable
         run: |
           set -euxo pipefail
 
           echo "Built files:"
-          find build -maxdepth 2 -type f -print
-
-          BOOOT_BIN="$(find build \
-            -maxdepth 2 \
-            -type f \
-            -perm -111 \
-            | head -1)"
-
-          if [ -z "$BOOOT_BIN" ]; then
-            echo "ERROR: Booot executable not found."
-            exit 1
-          fi
-
-          echo "BOOOT_BIN=$BOOOT_BIN" >> "$GITHUB_ENV"
+          find build -maxdepth 3 -type f -print
 
           echo
-          echo "Executable:"
-          file "$BOOOT_BIN"
+          echo "Executable information:"
+          file build/booot7
 
           echo
           echo "ELF architecture:"
-          readelf -h "$BOOOT_BIN" |
-            grep -E 'Class|Machine|OS/ABI'
+          readelf -h build/booot7 | \
+            grep -E 'Class|Machine|Type'
 
-          test -x "$BOOOT_BIN"
+          echo
+          echo "Dynamic dependencies:"
+          readelf -d build/booot7 | \
+            grep NEEDED || true
 
-      - name: Check neural networks
-        run: |
-          set -euxo pipefail
+          test "$(file -b build/booot7 | grep -c 'ELF 64-bit')" -eq 1
 
-          for f in \
-            booot2.nn \
-            booot4.nn \
-            booot58.nn
-          do
-            if [ ! -f "$f" ]; then
-              echo "ERROR: Required network not found: $f"
-              exit 1
-            fi
-
-            echo "$f:"
-            ls -lh "$f"
-          done
-
+      # ------------------------------------------------------------
+      # Prepare Android package
+      # ------------------------------------------------------------
       - name: Prepare Android package
         run: |
           set -euxo pipefail
@@ -246,31 +333,42 @@ jobs:
           rm -rf package
           mkdir -p package
 
-          cp "$BOOOT_BIN" package/booot7
-          cp booot2.nn package/
-          cp booot4.nn package/
-          cp booot58.nn package/
+          cp build/booot7 package/booot7
+
+          for f in booot2.nn booot4.nn booot58.nn; do
+            if [ -f "$f" ]; then
+              cp "$f" package/
+            else
+              echo "ERROR: Required network not found: $f"
+              exit 1
+            fi
+          done
 
           chmod +x package/booot7
 
+          echo
           echo "Final package:"
           ls -lh package/
 
+      # ------------------------------------------------------------
+      # Create ZIP
+      # ------------------------------------------------------------
       - name: Create ZIP
         run: |
           set -euxo pipefail
 
           cd package
 
-          zip -9 \
-            -r \
+          zip -9 -r \
             ../booot-android-arm64.zip \
-            .
+            booot7 \
+            booot2.nn \
+            booot4.nn \
+            booot58.nn
 
-          cd ..
-
-          ls -lh booot-android-arm64.zip
-
+      # ------------------------------------------------------------
+      # Upload artifact
+      # ------------------------------------------------------------
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
