@@ -1,10 +1,12 @@
-﻿unit uMagic;
+unit uMagic;
 
 {$IFDEF FPC}
   {$MODE Delphi}
 {$ENDIF}
 
+{$IFNDEF BOOOT_ARM64}
 {$Define pext}
+{$ENDIF BOOOT_ARM64}
 
 interface
    uses uBitBoards,SysUtils,DateUtils;

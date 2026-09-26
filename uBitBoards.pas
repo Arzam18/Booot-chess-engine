@@ -1,10 +1,12 @@
-﻿unit uBitBoards;
+unit uBitBoards;
 
 {$IFDEF FPC}
   {$MODE Delphi}
 {$ENDIF}
 
+{$IFNDEF BOOOT_ARM64}
 {$Define pext}
+{$ENDIF BOOOT_ARM64}
  // Все что связано с работой битбордов - тут.
 
 interface
@@ -158,58 +160,84 @@ $0002000000000000,$0005000000000000,$000A000000000000,$0014000000000000,$0028000
 implementation
  uses uMagic,uBoard,uHash,uKPK;
 {$IFDEF pext}
-function pext(BB:TBitBoard;mask : TBitBoard):integer;{$IFDEF FPC} nostackframe assembler;{$ENDIF}
-//               rcx (rdi)           rdx(rsi)
-asm
- {$IFNDEF FPC}
-  .noframe
- {$ENDIF}
-
- {$IFDEF UNIX}
-  db 0c4h,0e2h,0c2h,0f5h,0c6h             // pext rax,rdi,rsi
- {$ELSE UNIX}
-  db 0c4h,0e2h,0f2h,0f5h,0c2h             // pext rax,rcx,rdx
- {$ENDIF UNIX}
-end;
- {$ENDIF pext}
-function BitCount(BB:TBitBoard): Integer;{$IFDEF FPC} nostackframe assembler;{$ENDIF}
-  // Функция подсчета "1"- битов в битборде.
-  // На входе - битбоард, на выходе - число битов, установленных в "1"
-  asm
-   {$IFNDEF FPC}
-  .noframe
-  {$ENDIF}
-   popcnt rax, qword ptr bb;    // Быстрая 64-битная ассемблерная функция
+function pext(BB:TBitBoard;mask:TBitBoard):integer;
+{$IFDEF BOOOT_ARM64}
+var
+  outbit, bit: Integer;
+  b: TBitBoard;
+begin
+  Result:=0;
+  outbit:=0;
+  b:=mask;
+  while b<>0 do begin
+    bit:=BitScanForward(b);
+    if (BB and (TBitBoard(1) shl bit))<>0 then
+      Result:=Result or (1 shl outbit);
+    b:=b and (b-1);
+    Inc(outbit);
   end;
+end;
+{$ELSE}
+{$IFDEF FPC}
+function pext(BB:TBitBoard;mask:TBitBoard):integer; nostackframe assembler;
+{$ENDIF}
+asm
+ {$IFNDEF FPC}.noframe{$ENDIF}
+ {$IFDEF UNIX}
+  db 0c4h,0e2h,0c2h,0f5h,0c6h
+ {$ELSE}
+  db 0c4h,0e2h,0f2h,0f5h,0c2h
+ {$ENDIF}
+end;
+{$ENDIF BOOOT_ARM64}
+{$ENDIF pext}
 
- function BitScanForward(BB:TBitBoard): Integer;{$IFDEF FPC} nostackframe assembler;{$ENDIF}
-  // Ассемблерная процедура поиска единичного бита в битборде.
-  // поиск осуществляется "вперед",т.е от 0 до 63 бита
-  // На входе- битбоард (ненулевой!), на выходе - номер первого найденого "1"-бита.
-  // Если подать нулевой битбоард - на выходе 0 (возможна ошибка!!!)
+{$IFDEF BOOOT_ARM64}
+function BitCount(BB:TBitBoard):Integer;
+begin
+  Result:=0;
+  while BB<>0 do begin
+    BB:=BB and (BB-1);
+    Inc(Result);
+  end;
+end;
 
-   asm
-  {$IFNDEF FPC}
-  .noframe
-  {$ENDIF}
-    bsf rax,qword ptr bb                  // 64 версия
-   end;
+function BitScanForward(BB:TBitBoard):Integer;
+begin
+  Result:=0;
+  while (BB<>0) and ((BB and 1)=0) do begin
+    BB:=BB shr 1;
+    Inc(Result);
+  end;
+end;
 
+function BitScanBackward(BB:TBitBoard):Integer;
+begin
+  Result:=63;
+  while (BB<>0) and ((BB and (TBitBoard(1) shl 63))=0) do begin
+    BB:=BB shl 1;
+    Dec(Result);
+  end;
+end;
+{$ELSE}
+function BitCount(BB:TBitBoard):Integer;{$IFDEF FPC} nostackframe assembler;{$ENDIF}
+asm
+ {$IFNDEF FPC}.noframe{$ENDIF}
+ popcnt rax, qword ptr bb;
+end;
 
- function BitScanBackward(BB:TBitBoard): Integer;{$IFDEF FPC} nostackframe assembler;{$ENDIF}
-  // Ассемблерная процедура поиска единичного бита в битборде
-  // поиск осуществляется "назад",т.е от 63 до 1 бита
-  //На входе - битбоард(ненулевой!), на выходе - номер первого найденого "1"-бита.
-  // Если подать нулевой битбоард - на выходе 0 (возможна ошибка!!!)
+function BitScanForward(BB:TBitBoard):Integer;{$IFDEF FPC} nostackframe assembler;{$ENDIF}
+asm
+ {$IFNDEF FPC}.noframe{$ENDIF}
+ bsf rax,qword ptr bb;
+end;
 
-    asm
-  {$IFNDEF FPC}
-  .noframe
-  {$ENDIF}
-     bsr rax,qword ptr bb                 // 64 версия
-    end;
-
-
+function BitScanBackward(BB:TBitBoard):Integer;{$IFDEF FPC} nostackframe assembler;{$ENDIF}
+asm
+ {$IFNDEF FPC}.noframe{$ENDIF}
+ bsr rax,qword ptr bb;
+end;
+{$ENDIF BOOOT_ARM64}
 
  procedure PrintBitboard(BB : TBitboard);
   // Процедура печати битборда на экран в символьном виде в виде доски

@@ -1,10 +1,12 @@
-﻿unit uNN;
+unit uNN;
 
 {$IFDEF FPC}
   {$MODE Delphi}
 {$ENDIF}
 
+{$IFNDEF BOOOT_ARM64}
 {$Define pext}
+{$ENDIF BOOOT_ARM64}
 //{$Define AddLayer}
 interface
 uses SysUtils,Classes,types,uBitBoards,uBoard,DateUtils;
@@ -186,7 +188,11 @@ uses uThread;
 function GetFullVersionName:ansistring;
    begin
     Result:=VersionName;
+    {$IFDEF BOOOT_ARM64}
+    Result:=Result+'_ARM64';
+    {$ELSE}
     Result:=Result+'_AVX2';
+    {$ENDIF BOOOT_ARM64}
     {$IFDEF pext}
       Result:=Result+'_PEXT';
     {$ENDIF pext}
@@ -248,6 +254,185 @@ begin
                                      else res:=2;
   Result:=res;
 end;
+{$IFDEF BOOOT_ARM64}
+
+type
+  PInt16A = ^TInt16A;
+  TInt16A = array[0..65535] of SmallInt;
+  PInt32A = ^TInt32A;
+  TInt32A = array[0..65535] of LongInt;
+  PByteA  = ^TByteA;
+  TByteA  = array[0..65535] of Byte;
+  PInt8A  = ^TInt8A;
+  TInt8A  = array[0..65535] of ShortInt;
+  PPtrA   = ^TPtrA;
+  TPtrA   = array[0..64] of PByte;
+
+function I16At(P:PByte; I:Integer):SmallInt; inline;
+begin Result:=PInt16A(P)^[I]; end;
+function I32At(P:PByte; I:Integer):LongInt; inline;
+begin Result:=PInt32A(P)^[I]; end;
+function BAt(P:PByte; I:Integer):Byte; inline;
+begin Result:=PByteA(P)^[I]; end;
+function S8At(P:PByte; I:Integer):ShortInt; inline;
+begin Result:=PInt8A(P)^[I]; end;
+procedure PutI16(P:PByte; I:Integer; V:SmallInt); inline;
+begin PInt16A(P)^[I]:=V; end;
+procedure PutI32(P:PByte; I:Integer; V:LongInt); inline;
+begin PInt32A(P)^[I]:=V; end;
+procedure PutB(P:PByte; I:Integer; V:Byte); inline;
+begin PByteA(P)^[I]:=V; end;
+
+function AShr32(V:LongInt; Shift:Integer):LongInt; inline;
+var X:Int64;
+begin
+  if Shift=0 then Exit(V);
+  if V>=0 then Result:=LongInt(LongWord(V) shr Shift)
+  else begin
+    X:=-Int64(V);
+    Result:=-LongInt((X + (Int64(1) shl Shift)-1) shr Shift);
+  end;
+end;
+
+function SatU8(V:LongInt):Byte; inline;
+begin
+  if V<0 then Result:=0 else if V>255 then Result:=255 else Result:=Byte(V);
+end;
+
+procedure AVX2_RELU_ACC(Acc16,Permut,Dest:PByte);
+var i,v:Integer;
+begin
+  for i:=0 to half-1 do begin
+    v:=I16At(Acc16,i);
+    if v<0 then v:=0 else if v>255 then v:=255;
+    PutB(Dest,i,Byte(v));
+  end;
+end;
+
+procedure AVX2_ADDLayer(Source1,Source2,Dest:PByte);
+var i,v:Integer;
+begin
+  for i:=0 to quarter-1 do begin
+    v:=Integer(BAt(Source1,i))+Integer(BAt(Source2,i));
+    if v>255 then v:=255;
+    PutB(Dest,i,Byte(v));
+  end;
+end;
+
+procedure AVX2_FirstLayer_mul(inputs8,weights,Dest,store:PByte);
+var j,i:Integer; acc:Int64;
+begin
+  for j:=0 to hidden2-1 do begin
+    acc:=0;
+    for i:=0 to hidden1-1 do
+      acc:=acc+Int64(BAt(inputs8,i))*Int64(S8At(weights,j*hidden1+i));
+    PutI32(Dest,j,LongInt(acc));
+  end;
+end;
+
+procedure Relu2Generic(Summs,Biases,limits,Res:PByte; Shift:Integer);
+var i,v,lim:Integer;
+begin
+  for i:=0 to hidden2-1 do begin
+    v:=AShr32(I32At(Summs,i)+I32At(Biases,i),Shift);
+    if v<0 then v:=0;
+    lim:=I32At(limits,i);
+    if v>lim then v:=lim;
+    PutI32(Res,i,v);
+  end;
+end;
+procedure AVX2_RELU_2_64(Summs,Biases,limits,Res:PByte); begin Relu2Generic(Summs,Biases,limits,Res,6); end;
+procedure AVX2_RELU_2_128(Summs,Biases,limits,Res:PByte); begin Relu2Generic(Summs,Biases,limits,Res,7); end;
+procedure AVX2_RELU_2_256(Summs,Biases,limits,Res:PByte); begin Relu2Generic(Summs,Biases,limits,Res,8); end;
+procedure AVX2_RELU_2_512(Summs,Biases,limits,Res:PByte); begin Relu2Generic(Summs,Biases,limits,Res,9); end;
+
+procedure AVX2_SecondLayer_Mul(inprow,Matrix,dest,store:PByte);
+var j,i:Integer; acc:Int64;
+begin
+  for j:=0 to hidden3-1 do begin
+    acc:=0;
+    for i:=0 to hidden2-1 do
+      acc:=acc+Int64(I32At(inprow,i))*Int64(I32At(Matrix,j*hidden2+i));
+    PutI32(dest,j,LongInt(acc));
+  end;
+end;
+
+procedure Relu3Generic(Summs,Biases,limits,Res:PByte; Shift:Integer);
+var i,v,lim:Integer;
+begin
+  for i:=0 to hidden3-1 do begin
+    v:=AShr32(I32At(Summs,i)+I32At(Biases,i),Shift);
+    if v<0 then v:=0;
+    lim:=I32At(limits,i);
+    if v>lim then v:=lim;
+    PutI32(Res,i,v);
+  end;
+end;
+procedure AVX2_RELU_3_4096(Summs,Biases,limits,Res:PByte); begin Relu3Generic(Summs,Biases,limits,Res,12); end;
+procedure AVX2_RELU_3_8192(Summs,Biases,limits,Res:PByte); begin Relu3Generic(Summs,Biases,limits,Res,13); end;
+
+function AVX2_NNOut(Inprow,Matrix,Ones,Bias:PByte):Integer;
+var i:Integer; acc:Int64;
+begin
+  acc:=0;
+  for i:=0 to hidden3-1 do
+    acc:=acc+Int64(I32At(Inprow,i))*Int64(I32At(Matrix,i));
+  Result:=LongInt(acc)+I32At(Bias,0);
+end;
+
+procedure AVX2_CopyAcc(Source,Dest:PByte);
+var i:Integer;
+begin
+  for i:=0 to half-1 do PutI16(Dest,i,I16At(Source,i));
+end;
+procedure AVX2_SetFeauture(Source,NetIndex,Dest:PByte);
+var i:Integer;
+begin
+  for i:=0 to half-1 do PutI16(Dest,i,SmallInt(I16At(Source,i)+I16At(NetIndex,i)));
+end;
+procedure AVX2_ReSetFeauture(Source,NetIndex,Dest:PByte);
+var i:Integer;
+begin
+  for i:=0 to half-1 do PutI16(Dest,i,SmallInt(I16At(Source,i)-I16At(NetIndex,i)));
+end;
+procedure AVX2_DBlReSetFeauture(Source,NetIndex1,NetIndex2,Dest:PByte);
+var i:Integer;
+begin
+  for i:=0 to half-1 do PutI16(Dest,i,SmallInt(I16At(Source,i)-I16At(NetIndex1,i)-I16At(NetIndex2,i)));
+end;
+procedure AVX2_UpdFeauture(Source,NetIndexAdd,NetIndexSUB,Dest:PByte);
+var i:Integer;
+begin
+  for i:=0 to half-1 do PutI16(Dest,i,SmallInt(I16At(Source,i)+I16At(NetIndexAdd,i)-I16At(NetIndexSUB,i)));
+end;
+procedure AVX2_UpdCaptureFeauture(Source,Buf,Dest:PByte);
+var i:Integer; B:PPtrA;
+begin
+  B:=PPtrA(Buf);
+  for i:=0 to half-1 do
+    PutI16(Dest,i,SmallInt(I16At(Source,i)+I16At(B^[1],i)-I16At(B^[2],i)-I16At(B^[3],i)));
+end;
+procedure AVX2_UpdCastleFeauture(Source,Buf,Dest:PByte);
+var i:Integer; B:PPtrA;
+begin
+  B:=PPtrA(Buf);
+  for i:=0 to half-1 do
+    PutI16(Dest,i,SmallInt(I16At(Source,i)+I16At(B^[1],i)-I16At(B^[2],i)-I16At(B^[3],i)+I16At(B^[4],i)));
+end;
+procedure AVX2_UpdBufFeauture(acc,cnt,Buf,Flayer_Bias:PByte);
+var i,j,n:Integer; B:PPtrA; S:Int64;
+begin
+  B:=PPtrA(Buf);
+  n:=PInteger(cnt)^;
+  for i:=0 to half-1 do begin
+    S:=I16At(Flayer_Bias,i);
+    for j:=1 to n do
+      S:=S+I16At(B^[j],i);
+    PutI16(acc,i,SmallInt(S));
+  end;
+end;
+
+{$ELSE}
 Procedure AVX2_RELU_ACC(Acc16,Permut,Dest : Pbyte); {$IFDEF FPC} nostackframe assembler;{$ENDIF} // 5,94c  на hidden1=512 (half=256), 11.97 for both
 //                      rcx(rdi),rdx(rsi),r8(rdx)
 // Получая на вход   аккумулятор за выбранный цвет (256 элементов int16) реализует RELU и  сжимает выход  до int8.Использует SIMD AVX2
@@ -1285,6 +1470,8 @@ asm
 end;
 
 
+{$ENDIF BOOOT_ARM64}
+
 Function ForwardPass(SideToMove:integer;var Pass:TForwardPass):integer;
 // Проход по нейросети. На входе загруженная сеть, очередь хода и структура аккумулятора, на выходе - Оценка позции
 
@@ -1329,10 +1516,19 @@ Function loadnet(name:shortstring;var CurrNet:TNeuralNetWeights):boolean;
 var
   res,size,i,j : integer;
   ver,w   : int16;
-  f: TResourceStream;
+  f: TStream;
+{$IFDEF BOOOT_ARM64}
+  fn: string;
+{$ENDIF}
 begin
-  // Открываем файл и проверяем верисю нейросети
-  f := TResourceStream.Create(HInstance,name,RT_RCDATA);
+  // Open the NN. Desktop builds keep the original embedded resource.
+{$IFDEF BOOOT_ARM64}
+  fn:=name;
+  f:=TFileStream.Create(fn,fmOpenRead or fmShareDenyNone);
+{$ELSE}
+  f:=TResourceStream.Create(HInstance,name,RT_RCDATA);
+{$ENDIF}
+  try
   w:=0;ver:=0;
   Result:=false;
   res:=f.Read(ver,2); // 16-бит целочисленное
@@ -1461,7 +1657,6 @@ begin
   CurrNet.MaxSigma:=j;
   for i:=0 to j do
       CurrNet.Sigma[i]:=ReSigma((i/CurrNet.scale_out)/CurrNet.scale_act);
-  f.Free;
   {writeln('NET Version : ',ver);
   writeln('Scale_act = ',CurrNet.scale_act:6:2);
   writeln('w1 = ',CurrNet.w1);
@@ -1469,7 +1664,10 @@ begin
   writeln('Scale_out = ',CurrNet.scale_out);
   writeln('Model : ',CurrNet.model); }
 
-  Result:=True
+  Result:=True;
+  finally
+    f.Free;
+  end;
 end;
 
 Function GetBlockIndex(Piese:integer;sq:integer;mirror:integer):integer;
