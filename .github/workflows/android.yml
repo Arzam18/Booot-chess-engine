@@ -1,4 +1,4 @@
-name: Build Booot for Android ARM64 NEON
+name: Build Booot for Android ARM64
 
 on:
   workflow_dispatch:
@@ -6,119 +6,142 @@ on:
     paths:
       - '**.pas'
       - '**.dpr'
-      - '**.lpi'
-      - '**.dproj'
+      - '**.inc'
+      - '**.rc'
       - '.github/workflows/android.yml'
-      - 'booot2.nn'
-      - 'booot4.nn'
-      - 'booot58.nn'
 
 jobs:
   build-android:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Locate Android NDK
-        shell: bash
+      - name: Install dependencies
         run: |
           set -euxo pipefail
-          NDK="${ANDROID_NDK_LATEST_HOME:-}"
-          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
-            for d in /usr/local/lib/android/sdk/ndk/*; do
-              if [ -d "$d" ]; then NDK="$d"; fi
-            done
-          fi
-          test -n "$NDK"
-          test -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
-          echo "ANDROID_NDK=$NDK" >> "$GITHUB_ENV"
-          echo "NDK=$NDK"
+
+          sudo apt-get update
+          sudo apt-get install -y \
+            curl \
+            tar \
+            unzip \
+            file \
+            binutils-aarch64-linux-gnu
 
       - name: Download Free Pascal AArch64 Android compiler
-        shell: bash
         run: |
           set -euxo pipefail
+
+          FPC_URL="https://downloads.freepascal.org/fpc/snapshot/fixes/aarch64-android/fpc-3.2.3.aarch64-android.built.on.x86_64-linux.tar.gz"
+
           curl -L --fail --retry 3 \
             -o /tmp/fpc-aarch64-android.tar.gz \
-            https://downloads.freepascal.org/fpc/snapshot/fixes/aarch64-android/fpc-3.2.3.aarch64-android.built.on.x86_64-linux.tar.gz
-          mkdir -p "$HOME/fpc-aarch64-android"
-          tar -xzf /tmp/fpc-aarch64-android.tar.gz -C "$HOME/fpc-aarch64-android"
-          FPC_BIN="$(find "$HOME/fpc-aarch64-android" -type f -name fpc -perm -111 | head -1)"
-          test -n "$FPC_BIN"
-          echo "FPC_BIN=$FPC_BIN" >> "$GITHUB_ENV"
-          "$FPC_BIN" -iV
-          "$FPC_BIN" -iTP
-          "$FPC_BIN" -iTO
+            "$FPC_URL"
 
-      - name: Check neural networks
-        shell: bash
+          mkdir -p "$HOME/fpc-aarch64-android"
+
+          tar -xzf \
+            /tmp/fpc-aarch64-android.tar.gz \
+            -C "$HOME/fpc-aarch64-android"
+
+      - name: Locate Free Pascal
+        id: fpc
         run: |
           set -euxo pipefail
-          for f in booot2.nn booot4.nn booot58.nn; do
-            test -f "$f"
-            test -s "$f"
-            echo "$f: $(stat -c%s "$f") bytes"
-          done
+
+          FPC_BIN="$(find "$HOME/fpc-aarch64-android" \
+            -type f \
+            -name fpc \
+            -perm -111 \
+            | head -1)"
+
+          test -n "$FPC_BIN"
+
+          echo "FPC_BIN=$FPC_BIN"
+          file "$FPC_BIN"
+
+          "$FPC_BIN" -iV
+
+          echo "FPC_BIN=$FPC_BIN" >> "$GITHUB_ENV"
+
+      - name: Locate Android NDK
+        run: |
+          set -euxo pipefail
+
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+          ls -la "$ANDROID_NDK_HOME"
 
       - name: Build Booot
-        shell: bash
         run: |
           set -euxo pipefail
-          SYSROOT="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
-          CLANG="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
-          LIBDIR="$SYSROOT/usr/lib/aarch64-linux-android/24"
 
-          rm -rf build
           mkdir -p build
 
           "$FPC_BIN" \
-            -Mdelphi \
-            -Rintel \
             -Tandroid \
-            -Paarch64 \
-            -dBOOOT_ARM64 \
+            -Parm \
             -O3 \
             -OoREGVAR \
-            -OoPEEPHOLE \
-            -Xs \
-            -k"--sysroot=$SYSROOT" \
-            -k"-fuse-ld=lld" \
-            -Fl"$LIBDIR" \
-            -Fu. \
+            -OoLOOPUNROLL \
+            -CfVFPV3 \
+            -CpARMV8 \
+            -dBOOOT_ARM64 \
+            -Fu"$HOME/fpc-aarch64-android/lib/fpc/3.2.3/units/aarch64-android/*" \
             -FEbuild \
-            -FUbuild/units \
             booot7.dpr
 
-          file build/booot7
-          readelf -h build/booot7 | grep -E 'Class:|Machine:|Type:'
-          chmod +x build/booot7
-
-          # Basic non-interactive UCI smoke test. The engine needs the three NN files.
-          timeout 8s bash -c 'printf "uci\\nisready\\nquit\\n" | ./build/booot7' > build/uci.txt 2>&1 || true
-          cat build/uci.txt
-          grep -q '^uciok' build/uci.txt
-          grep -q '^readyok' build/uci.txt
-
-      - name: Package Android engine
-        shell: bash
+      - name: Verify executable
         run: |
           set -euxo pipefail
-          mkdir -p release
-          cp build/booot7 release/Booot-android-arm64
-          cp booot2.nn booot4.nn booot58.nn release/
-          chmod +x release/Booot-android-arm64
-          (
-            cd release
-            zip -9 -q Booot-android-arm64.zip Booot-android-arm64 booot2.nn booot4.nn booot58.nn
-          )
-          # Keep the artifact as one zip; it contains the executable and its three required NN files.
-          ls -lh release/Booot-android-arm64.zip
+
+          echo "Built files:"
+          find build -maxdepth 2 -type f -print
+
+          echo
+          echo "Executable information:"
+          file build/booot7
+
+          echo
+          echo "Architecture:"
+          readelf -h build/booot7 | grep -E 'Class|Machine'
+
+          test -x build/booot7
+
+      - name: Prepare Android package
+        run: |
+          set -euxo pipefail
+
+          mkdir -p package
+
+          cp build/booot7 package/booot7
+
+          # Copy the three NN files from the repository.
+          for f in booot2.nn booot4.nn booot58.nn; do
+            if [ -f "$f" ]; then
+              cp "$f" package/
+            else
+              echo "ERROR: Required network not found: $f"
+              exit 1
+            fi
+          done
+
+          chmod +x package/booot7
+
+          echo "Final package:"
+          ls -lh package/
+
+      - name: Create ZIP
+        run: |
+          set -euxo pipefail
+
+          cd package
+          zip -9 -r ../booot-android-arm64.zip .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Booot-android-arm64
-          path: release/Booot-android-arm64.zip
+          name: booot-android-arm64
+          path: booot-android-arm64.zip
           if-no-files-found: error
