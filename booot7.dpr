@@ -1,4 +1,4 @@
-﻿program booot7;
+program booot7;
 
 {$IFDEF FPC}
   {$MODE Delphi}
@@ -6,7 +6,9 @@
 
 {$APPTYPE CONSOLE}
 
+{$IFNDEF BOOOT_ARM64}
 {$R 'resource.res'}
+{$ENDIF BOOOT_ARM64}
 //{$R 'resource.res' 'resource.rc'}
 
 
@@ -39,8 +41,14 @@ var
   i : integer;
 begin
   // грузим нейросеть
+  {$IFDEF BOOOT_ARM64}
+  LoadNet('booot2.nn',Nets[0]);
+  LoadNet('booot4.nn',Nets[1]);
+  LoadNet('booot58.nn',Nets[2]);
+  {$ELSE}
   for i := 1 to MaxNets do
     LoadNet('MYNN'+inttostr(i),Nets[i-1]);
+  {$ENDIF BOOOT_ARM64}
   writeln(GetFullVersionName);
   game.syzygyman:=0;
   game.syzygydepth:=1;
