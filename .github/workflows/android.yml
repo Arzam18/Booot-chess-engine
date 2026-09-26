@@ -1,101 +1,124 @@
-name: Build Booot for Android (AArch64)
+name: Build Booot for Android ARM64 NEON
 
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
+  push:
+    paths:
+      - '**.pas'
+      - '**.dpr'
+      - '**.lpi'
+      - '**.dproj'
+      - '.github/workflows/android.yml'
+      - 'booot2.nn'
+      - 'booot4.nn'
+      - 'booot58.nn'
 
 jobs:
   build-android:
-    runs-on: ubuntu-latest
-    container:
-      image: suvepl/fpc-for-android:bare
+    runs-on: ubuntu-24.04
+
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
-        run: apt-get update && apt-get install -y python3
-
-      - name: Patch source files for ARM compilation
+      - name: Locate Android NDK
+        shell: bash
         run: |
-          python3 - << 'PYEOF'
-          import re
+          set -euxo pipefail
+          NDK="${ANDROID_NDK_LATEST_HOME:-}"
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
+            for d in /usr/local/lib/android/sdk/ndk/*; do
+              if [ -d "$d" ]; then NDK="$d"; fi
+            done
+          fi
+          test -n "$NDK"
+          test -x "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          echo "ANDROID_NDK=$NDK" >> "$GITHUB_ENV"
+          echo "NDK=$NDK"
 
-          def patch_file(filename, is_nn=False):
-              with open(filename, 'r', encoding='utf-8', errors='ignore') as f:
-                  content = f.read()
+      - name: Download Free Pascal AArch64 Android compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -L --fail --retry 3 \
+            -o /tmp/fpc-aarch64-android.tar.gz \
+            https://downloads.freepascal.org/fpc/snapshot/fixes/aarch64-android/fpc-3.2.3.aarch64-android.built.on.x86_64-linux.tar.gz
+          mkdir -p "$HOME/fpc-aarch64-android"
+          tar -xzf /tmp/fpc-aarch64-android.tar.gz -C "$HOME/fpc-aarch64-android"
+          FPC_BIN="$(find "$HOME/fpc-aarch64-android" -type f -name fpc -perm -111 | head -1)"
+          test -n "$FPC_BIN"
+          echo "FPC_BIN=$FPC_BIN" >> "$GITHUB_ENV"
+          "$FPC_BIN" -iV
+          "$FPC_BIN" -iTP
+          "$FPC_BIN" -iTO
 
-              # Remove assembler directives from function signatures
-              content = re.sub(r'nostackframe\s+assembler\s*;', '', content, flags=re.IGNORECASE)
-              content = re.sub(r'assembler\s*;', '', content, flags=re.IGNORECASE)
-
-              lines = content.split('\n')
-              out_lines = []
-              in_asm = False
-              is_func = False
-              current_func = ''
-
-              for line in lines:
-                  stripped = line.strip()
-                  if not in_asm:
-                      if 'function ' in line.lower():
-                          is_func = True
-                          func_match = re.search(r'function\s+(\w+)', line, re.IGNORECASE)
-                          if func_match: current_func = func_match.group(1).lower()
-                      elif 'procedure ' in line.lower():
-                          is_func = False
-                          func_match = re.search(r'procedure\s+(\w+)', line, re.IGNORECASE)
-                          if func_match: current_func = func_match.group(1).lower()
-
-                  # Detect start of asm block
-                  if not in_asm and (stripped.lower() == 'asm' or stripped.lower().startswith('asm ')):
-                      in_asm = True
-                      out_lines.append('begin')
-                      
-                      if is_nn:
-                          # uNN.pas: Just return 0 (NNUE will be broken but compiles)
-                          if is_func:
-                              out_lines.append('  Result := 0;')
-                      else:
-                          # uBitBoards.pas: Use FPC built-in bit operations
-                          if 'bitcount' in current_func or 'popcount' in current_func:
-                              out_lines.append('  Result := 0;')
-                              out_lines.append('  while x <> 0 do begin')
-                              out_lines.append('    x := x and (x - 1);')
-                              out_lines.append('    Inc(Result);')
-                              out_lines.append('  end;')
-                          elif 'bitscanforward' in current_func:
-                              out_lines.append('  Result := BsfQWord(x);')
-                          elif 'bitscanreverse' in current_func:
-                              out_lines.append('  Result := BsrQWord(x);')
-                          else:
-                              if is_func:
-                                  out_lines.append('  Result := 0;')
-                      continue
-
-                  if in_asm:
-                      if stripped.lower() == 'end;':
-                          in_asm = False
-                          out_lines.append('end;')
-                      continue
-
-                  out_lines.append(line)
-
-              with open(filename, 'w', encoding='utf-8') as f:
-                  f.write('\n'.join(out_lines))
-              print(f"Patched {filename} successfully.")
-
-          patch_file('uNN.pas', is_nn=True)
-          patch_file('uBitBoards.pas', is_nn=False)
-          PYEOF
+      - name: Check neural networks
+        shell: bash
+        run: |
+          set -euxo pipefail
+          for f in booot2.nn booot4.nn booot58.nn; do
+            test -f "$f"
+            test -s "$f"
+            echo "$f: $(stat -c%s "$f") bytes"
+          done
 
       - name: Build Booot
+        shell: bash
         run: |
-          fpc -Mdelphi -Tandroid -Paarch64 -O2 -XX -CX booot7.dpr
+          set -euxo pipefail
+          SYSROOT="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          CLANG="$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+          LIBDIR="$SYSROOT/usr/lib/aarch64-linux-android/24"
+
+          rm -rf build
+          mkdir -p build
+
+          "$FPC_BIN" \
+            -Mdelphi \
+            -Rintel \
+            -Tandroid \
+            -Paarch64 \
+            -dBOOOT_ARM64 \
+            -O3 \
+            -OoREGVAR \
+            -OoPEEPHOLE \
+            -Xs \
+            -k"--sysroot=$SYSROOT" \
+            -k"-fuse-ld=lld" \
+            -Fl"$LIBDIR" \
+            -Fu. \
+            -FEbuild \
+            -FUbuild/units \
+            booot7.dpr
+
+          file build/booot7
+          readelf -h build/booot7 | grep -E 'Class:|Machine:|Type:'
+          chmod +x build/booot7
+
+          # Basic non-interactive UCI smoke test. The engine needs the three NN files.
+          timeout 8s bash -c 'printf "uci\\nisready\\nquit\\n" | ./build/booot7' > build/uci.txt 2>&1 || true
+          cat build/uci.txt
+          grep -q '^uciok' build/uci.txt
+          grep -q '^readyok' build/uci.txt
+
+      - name: Package Android engine
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p release
+          cp build/booot7 release/Booot-android-arm64
+          cp booot2.nn booot4.nn booot58.nn release/
+          chmod +x release/Booot-android-arm64
+          (
+            cd release
+            zip -9 -q Booot-android-arm64.zip Booot-android-arm64 booot2.nn booot4.nn booot58.nn
+          )
+          # Keep the artifact as one zip; it contains the executable and its three required NN files.
+          ls -lh release/Booot-android-arm64.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: booot7-android-aarch64
-          path: booot7
+          name: Booot-android-arm64
+          path: release/Booot-android-arm64.zip
+          if-no-files-found: error
