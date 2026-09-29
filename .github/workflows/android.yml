@@ -46,20 +46,20 @@ jobs:
 
 
       # ============================================================
-      # INSTALL HOST FREE PASCAL 3.2.0
+      # INSTALL HOST FREE PASCAL 3.2.2
       # ============================================================
-      - name: Install Free Pascal 3.2.0 host compiler
+      - name: Install Free Pascal 3.2.2 host compiler
         run: |
           set -e
 
           cd "$HOME"
 
-          curl -L -o fpc-3.2.0-x86_64-linux.tar \
-            https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-x86_64-linux.tar
+          curl -L -o fpc-3.2.2-x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2.x86_64-linux.tar
 
           mkdir -p "$HOME/fpc-host"
 
-          tar -xf fpc-3.2.0-x86_64-linux.tar \
+          tar -xf fpc-3.2.2-x86_64-linux.tar \
             -C "$HOME/fpc-host"
 
           cd "$HOME/fpc-host"
@@ -101,12 +101,12 @@ jobs:
 
           cd "$HOME"
 
-          curl -L -o fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar \
-            https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar
+          curl -L -o fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar
 
           mkdir -p "$HOME/fpc-cross"
 
-          tar -xf fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar \
+          tar -xf fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar \
             -C "$HOME/fpc-cross"
 
           cd "$HOME/fpc-cross"
@@ -201,10 +201,10 @@ jobs:
           mkdir -p "$FULL_FPC"
           mkdir -p "$FULL_INSTALL"
 
-          curl -L -o fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
-            https://downloads.freepascal.org/fpc/dist/3.2.0/aarch64-android/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
+          curl -L -o fpc-3.2.2-aarch64-android.built-on-x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.2/aarch64-android/fpc-3.2.2-aarch64-android.built-on-x86_64-linux.tar
 
-          tar -xf fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
+          tar -xf fpc-3.2.2-aarch64-android.built-on-x86_64-linux.tar \
             -C "$FULL_FPC"
 
           echo
@@ -238,7 +238,7 @@ jobs:
           echo
           echo "Searching installed Android FPC package for system.ppu..."
 
-          SYSTEM_PPU=$(find "$HOME/fpc-3.2.0" \
+          SYSTEM_PPU=$(find "$HOME/fpc-3.2.2" \
             -type f \
             -path '*aarch64-android*' \
             -name 'system.ppu' \
@@ -250,7 +250,7 @@ jobs:
 
             echo
             echo "All system.ppu files under the FPC installation:"
-            find "$HOME/fpc-3.2.0" \
+            find "$HOME/fpc-3.2.2" \
               -type f \
               -name 'system.ppu' \
               -print \
@@ -258,7 +258,7 @@ jobs:
 
             echo
             echo "All aarch64-android directories:"
-            find "$HOME/fpc-3.2.0" \
+            find "$HOME/fpc-3.2.2" \
               -type d \
               -path '*aarch64-android*' \
               -print \
@@ -277,7 +277,7 @@ jobs:
           echo "Target RTL directory:"
           echo "$RTL_DIR"
 
-          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
+          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.2/units/aarch64-android"
 
           rm -rf "$TARGET_UNITS"
 
@@ -388,7 +388,7 @@ jobs:
             exit 1
           fi
 
-          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
+          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.2/units/aarch64-android"
 
           if [ ! -f "$TARGET_UNITS/system.ppu" ]; then
             echo "ERROR: Target RTL system.ppu is missing:"
@@ -427,7 +427,7 @@ jobs:
 
           CROSS_COMPILER="$HOME/fpc-install/bin/x86_64-linux/ppcrossa64"
 
-          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
+          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.2/units/aarch64-android"
 
           echo
           echo "Building Booot for Android AArch64..."
