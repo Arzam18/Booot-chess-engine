@@ -122,15 +122,39 @@ jobs:
 
           cd "$(dirname "$INSTALLER")"
 
-          sudo ./install.sh \
-            -D \
-            "$HOME/fpc-install"
+          export PATH="$HOME/fpc-install/bin:$PATH"
+
+          echo
+          echo "Host FPC available to cross installer:"
+          command -v fpc
+          fpc -iV
+
+          echo
+          echo "Installing AArch64 Android cross compiler..."
+
+          printf '%s\n' "$HOME/fpc-install" | ./install.sh
 
           CROSS_BIN="$HOME/fpc-install/bin/x86_64-linux"
 
           if [ ! -x "$CROSS_BIN/ppcrossa64" ]; then
-            echo "ERROR: ppcrossa64 was not installed."
-            find "$HOME/fpc-install" -type f -name "ppcrossa64" -print
+            echo
+            echo "ERROR: ppcrossa64 was not installed in expected location."
+
+            echo
+            echo "Searching fpc-install:"
+            find "$HOME/fpc-install" \
+              -type f \
+              -name "ppcrossa64" \
+              -print
+
+            echo
+            echo "Searching system installation:"
+            find /usr \
+              -type f \
+              -name "ppcrossa64" \
+              -print 2>/dev/null \
+              | sed -n '1,50p'
+
             exit 1
           fi
 
