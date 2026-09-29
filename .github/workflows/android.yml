@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '**.pas'
-      - '**.dpr'
-      - '**.inc'
-      - '**.rc'
+      - '*.pas'
+      - '*.dpr'
+      - '*.inc'
+      - '*.rc'
       - '.github/workflows/android.yml'
 
 jobs:
@@ -351,10 +351,8 @@ jobs:
 
           echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
 
-          # Persist for following GitHub Actions steps.
           echo "$TOOLCHAIN_BIN" >> "$GITHUB_PATH"
 
-          # Also activate immediately in THIS step.
           export PATH="$TOOLCHAIN_BIN:$PATH"
 
           echo
@@ -437,6 +435,30 @@ jobs:
           SYSROOT="$NDK/platforms/android-21/arch-arm64"
           ANDROID_LIB="$SYSROOT/usr/lib"
 
+          # ============================================================
+          # FIX:
+          # The AArch64 Android RTL base directory must be included.
+          # The previous workflow used only:
+          #
+          #   units/aarch64-android/*
+          #
+          # which does not include system.ppu in the base directory.
+          # ============================================================
+
+          FPC_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
+
+          test -d "$FPC_UNITS"
+          test -f "$FPC_UNITS/system.ppu"
+
+          echo
+          echo "========================================"
+          echo "AArch64 Android RTL"
+          echo "========================================"
+
+          echo "FPC_UNITS=$FPC_UNITS"
+
+          ls -lh "$FPC_UNITS/system.ppu"
+
           echo
           echo "========================================"
           echo "Building Booot"
@@ -456,7 +478,8 @@ jobs:
             -dRELEASE \
             -FEbuild \
             -FUbuild/units \
-            -Fu"$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android/*" \
+            -Fu"$FPC_UNITS" \
+            -Fu"$FPC_UNITS/*" \
             -XPaarch64-linux-android- \
             -k"--sysroot=$SYSROOT" \
             -Fl"$ANDROID_LIB" \
