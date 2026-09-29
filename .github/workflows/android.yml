@@ -230,7 +230,7 @@ jobs:
         run: |
           set -euxo pipefail
 
-          ANDROID_FPC_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar"
+          ANDROID_FPC_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/aarch64-android/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar"
 
           curl -L \
             --fail \
@@ -379,7 +379,7 @@ jobs:
 
 
       # ============================================================
-      # CONFIGURE CROSS COMPILER PATH
+      # CONFIGURE AARCH64 CROSS COMPILER PATH
       # ============================================================
       - name: Configure AArch64 cross compiler
         run: |
