@@ -2,13 +2,17 @@ name: Build Booot for Android ARM64
 
 on:
   workflow_dispatch:
+
   push:
     paths:
-      - '*.pas'
-      - '*.dpr'
-      - '*.inc'
-      - '*.rc'
-      - '.github/workflows/android.yml'
+      - "*.pas"
+      - "*.dpr"
+      - "*.inc"
+      - "*.rc"
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: read
 
 jobs:
   build-android:
@@ -28,8 +32,10 @@ jobs:
       # ============================================================
       - name: Install dependencies
         run: |
-          set -euxo pipefail
+          set -e
+
           sudo apt-get update
+
           sudo apt-get install -y \
             curl \
             tar \
@@ -40,505 +46,349 @@ jobs:
 
 
       # ============================================================
-      # DOWNLOAD FPC 3.2.0 NATIVE X86_64 LINUX
+      # INSTALL HOST FREE PASCAL 3.2.0
       # ============================================================
-      - name: Download Free Pascal 3.2.0 host compiler
+      - name: Install Free Pascal 3.2.0 host compiler
         run: |
-          set -euxo pipefail
+          set -e
 
-          FPC_HOST_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-x86_64-linux.tar"
+          cd "$HOME"
 
-          curl -L \
-            --fail \
-            --retry 3 \
-            --retry-delay 2 \
-            -o /tmp/fpc-host.tar \
-            "$FPC_HOST_URL"
+          curl -L -o fpc-3.2.0-x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-x86_64-linux.tar
 
-          mkdir -p "$HOME/fpc-packages"
+          mkdir -p "$HOME/fpc-host"
 
-          tar -xf \
-            /tmp/fpc-host.tar \
-            -C "$HOME/fpc-packages"
+          tar -xf fpc-3.2.0-x86_64-linux.tar \
+            -C "$HOME/fpc-host"
 
-          echo
-          echo "===== FPC host installer ====="
+          cd "$HOME/fpc-host"
 
-          find "$HOME/fpc-packages/fpc-3.2.0-x86_64-linux" \
-            -maxdepth 2 \
-            -type f \
-            -print \
-            | sort
+          INSTALLER=$(find . -type f -name install.sh | head -n 1)
 
+          if [ -z "$INSTALLER" ]; then
+            echo "ERROR: Host FPC install.sh not found."
+            exit 1
+          fi
 
-      # ============================================================
-      # INSTALL NATIVE FPC
-      # ============================================================
-      - name: Install Free Pascal host compiler
-        run: |
-          set -euxo pipefail
+          echo "Using host installer: $INSTALLER"
 
-          FPC_DIR="$HOME/fpc-packages/fpc-3.2.0-x86_64-linux"
-          FPC_PREFIX="$HOME/fpc-install"
+          cd "$(dirname "$INSTALLER")"
 
-          test -f "$FPC_DIR/install.sh"
+          sudo ./install.sh \
+            -D \
+            "$HOME/fpc-install"
 
-          chmod +x "$FPC_DIR/install.sh"
+          echo "$HOME/fpc-install/bin" >> "$GITHUB_PATH"
 
-          mkdir -p "$FPC_PREFIX"
-
-          cd "$FPC_DIR"
+          export PATH="$HOME/fpc-install/bin:$PATH"
 
           echo
-          echo "========================================"
-          echo "Installing native Free Pascal 3.2.0"
-          echo "========================================"
-
-          printf '%s\n' \
-            "$FPC_PREFIX" \
-            "n" \
-            "n" \
-            "n" \
-            | ./install.sh
-
-          echo
-          echo "===== Installed FPC ====="
-
-          find "$FPC_PREFIX" \
-            -maxdepth 4 \
-            \( -type f -o -type l \) \
-            | sort \
-            | sed -n '1,200p'
-
-
-      # ============================================================
-      # ADD NATIVE FPC TO PATH
-      # ============================================================
-      - name: Configure native FPC
-        run: |
-          set -euxo pipefail
-
-          FPC_PREFIX="$HOME/fpc-install"
-
-          test -d "$FPC_PREFIX/bin"
-
-          echo "$FPC_PREFIX/bin" >> "$GITHUB_PATH"
-
-          export PATH="$FPC_PREFIX/bin:$PATH"
-
-          echo
-          echo "===== Native FPC ====="
-
-          command -v fpc
-          command -v ppcx64
-
+          echo "Host FPC:"
           fpc -iV
-          ppcx64 -iV
-
-          file "$(command -v fpc)"
-          file "$(command -v ppcx64)"
-
-          test "$(fpc -iV)" = "3.2.0"
-
-
-      # ============================================================
-      # DOWNLOAD AARCH64 ANDROID CROSS COMPILER
-      # ============================================================
-      - name: Download Free Pascal 3.2.0 AArch64 Android cross compiler
-        run: |
-          set -euxo pipefail
-
-          CROSS_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar"
-
-          curl -L \
-            --fail \
-            --retry 3 \
-            --retry-delay 2 \
-            -o /tmp/fpc-aarch64-android-cross.tar \
-            "$CROSS_URL"
-
-          mkdir -p "$HOME/fpc-packages"
-
-          tar -xf \
-            /tmp/fpc-aarch64-android-cross.tar \
-            -C "$HOME/fpc-packages"
 
           echo
-          echo "===== AArch64 Android installer ====="
-
-          find "$HOME/fpc-packages/fpc-3.2.0-aarch64-android.cross.x86_64-linux" \
-            -maxdepth 2 \
-            -type f \
-            -print \
-            | sort
+          echo "Host FPC location:"
+          command -v fpc
 
 
       # ============================================================
       # INSTALL AARCH64 ANDROID CROSS COMPILER
       # ============================================================
-      - name: Install AArch64 Android cross compiler
+      - name: Install Free Pascal AArch64 Android cross compiler
         run: |
-          set -euxo pipefail
+          set -e
 
-          export PATH="$HOME/fpc-install/bin:$PATH"
+          cd "$HOME"
 
-          CROSS_DIR="$HOME/fpc-packages/fpc-3.2.0-aarch64-android.cross.x86_64-linux"
-          FPC_PREFIX="$HOME/fpc-install"
+          curl -L -o fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar
 
-          test -f "$CROSS_DIR/install.sh"
+          mkdir -p "$HOME/fpc-cross"
 
-          cd "$CROSS_DIR"
+          tar -xf fpc-3.2.0-aarch64-android.cross.x86_64-linux.tar \
+            -C "$HOME/fpc-cross"
 
-          echo
-          echo "========================================"
-          echo "Installing AArch64 Android cross FPC"
-          echo "========================================"
+          cd "$HOME/fpc-cross"
 
-          printf '%s\n' \
-            "$FPC_PREFIX" \
-            "n" \
-            "n" \
-            "n" \
-            | ./install.sh
+          INSTALLER=$(find . -type f -name install.sh | head -n 1)
 
-          echo
-          echo "===== Installed cross compiler ====="
-
-          find "$FPC_PREFIX" \
-            -type f \
-            \( \
-              -name 'ppcrossa64' \
-              -o \
-              -name 'ppca64' \
-              -o \
-              -name 'ppc*a64' \
-            \) \
-            -print \
-            | sort
-
-
-      # ============================================================
-      # DOWNLOAD COMPLETE AARCH64 ANDROID FPC PACKAGE
-      #
-      # IMPORTANT:
-      # This package contains the actual Android RTL.
-      #
-      # We DO NOT execute its Android compiler on Ubuntu.
-      # We only extract the target RTL files.
-      # ============================================================
-      - name: Download Free Pascal 3.2.0 AArch64 Android RTL
-        run: |
-          set -euxo pipefail
-
-          ANDROID_FPC_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/aarch64-android/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar"
-
-          curl -L \
-            --fail \
-            --retry 3 \
-            --retry-delay 2 \
-            -o /tmp/fpc-aarch64-android-full.tar \
-            "$ANDROID_FPC_URL"
-
-          mkdir -p "$HOME/fpc-android-full"
-
-          tar -xf \
-            /tmp/fpc-aarch64-android-full.tar \
-            -C "$HOME/fpc-android-full"
-
-          echo
-          echo "===== Complete Android FPC package ====="
-
-          find "$HOME/fpc-android-full" \
-            -maxdepth 3 \
-            -type f \
-            -print \
-            | sort \
-            | sed -n '1,200p'
-
-
-      # ============================================================
-      # INSTALL AARCH64 ANDROID RTL
-      #
-      # The cross compiler package contains ppcrossa64,
-      # but the target RTL is supplied by the complete
-      # AArch64 Android package.
-      # ============================================================
-      - name: Install AArch64 Android RTL
-        run: |
-          set -euxo pipefail
-
-          FPC_PREFIX="$HOME/fpc-install"
-          FULL_FPC="$HOME/fpc-android-full"
-
-          echo
-          echo "========================================"
-          echo "Searching complete Android package"
-          echo "for AArch64 RTL"
-          echo "========================================"
-
-          SYSTEM_PPU="$(
-            find "$FULL_FPC" \
-              -type f \
-              -path '*units/aarch64-android*' \
-              -name 'system.ppu' \
-              -print \
-              | sed -n '1p'
-          )"
-
-          if [ -z "$SYSTEM_PPU" ]; then
-            echo
-            echo "ERROR: system.ppu was not found in the"
-            echo "complete AArch64 Android FPC package."
-
-            echo
-            echo "All system.ppu files:"
-            find "$FULL_FPC" \
-              -type f \
-              -name 'system.ppu' \
-              -print \
-              | sort
-
+          if [ -z "$INSTALLER" ]; then
+            echo "ERROR: Cross FPC install.sh not found."
             exit 1
           fi
 
-          SOURCE_UNITS="$(dirname "$(dirname "$SYSTEM_PPU")")"
-          TARGET_UNITS="$FPC_PREFIX/lib/fpc/3.2.0/units/aarch64-android"
+          echo "Using cross installer: $INSTALLER"
 
-          echo
-          echo "SYSTEM_PPU=$SYSTEM_PPU"
-          echo "SOURCE_UNITS=$SOURCE_UNITS"
-          echo "TARGET_UNITS=$TARGET_UNITS"
+          cd "$(dirname "$INSTALLER")"
 
-          test -f "$SYSTEM_PPU"
-          test -d "$SOURCE_UNITS"
-
-          mkdir -p "$TARGET_UNITS"
-
-          echo
-          echo "Copying complete AArch64 Android units..."
-
-          cp -a \
-            "$SOURCE_UNITS/." \
-            "$TARGET_UNITS/"
-
-          echo
-          echo "===== Installed target RTL ====="
-
-          test -f "$TARGET_UNITS/rtl/system.ppu"
-
-          ls -lh \
-            "$TARGET_UNITS/rtl/system.ppu"
-
-          echo
-          echo "===== Target RTL directory ====="
-
-          ls -lah \
-            "$TARGET_UNITS/rtl" \
-            | sed -n '1,100p'
-
-
-      # ============================================================
-      # VERIFY CROSS COMPILER
-      # ============================================================
-      - name: Verify AArch64 cross compiler
-        run: |
-          set -euxo pipefail
-
-          FPC_PREFIX="$HOME/fpc-install"
-
-          CROSS_COMPILER="$FPC_PREFIX/bin/x86_64-linux/ppcrossa64"
-
-          echo
-          echo "===== FPC ====="
-
-          export PATH="$FPC_PREFIX/bin:$PATH"
-
-          command -v fpc
-          fpc -iV
-
-          echo
-          echo "===== AArch64 cross compiler ====="
-
-          test -x "$CROSS_COMPILER"
-
-          echo "CROSS_COMPILER=$CROSS_COMPILER"
-
-          ls -lh "$CROSS_COMPILER"
-
-          file "$CROSS_COMPILER"
-
-          "$CROSS_COMPILER" -iV
-
-          echo
-          echo "===== AArch64 target ====="
-
-          "$CROSS_COMPILER" -iTP
-          "$CROSS_COMPILER" -iTO
-
-          echo "CROSS_COMPILER=$CROSS_COMPILER" >> "$GITHUB_ENV"
-
-
-      # ============================================================
-      # CONFIGURE AARCH64 CROSS COMPILER PATH
-      # ============================================================
-      - name: Configure AArch64 cross compiler
-        run: |
-          set -euxo pipefail
+          sudo ./install.sh \
+            -D \
+            "$HOME/fpc-install"
 
           CROSS_BIN="$HOME/fpc-install/bin/x86_64-linux"
 
-          test -d "$CROSS_BIN"
-          test -x "$CROSS_BIN/ppcrossa64"
+          if [ ! -x "$CROSS_BIN/ppcrossa64" ]; then
+            echo "ERROR: ppcrossa64 was not installed."
+            find "$HOME/fpc-install" -type f -name "ppcrossa64" -print
+            exit 1
+          fi
 
           echo "$CROSS_BIN" >> "$GITHUB_PATH"
+          echo "$HOME/fpc-install/bin" >> "$GITHUB_PATH"
 
           export PATH="$CROSS_BIN:$HOME/fpc-install/bin:$PATH"
 
           echo
-          echo "===== Compiler commands ====="
-
-          command -v fpc
+          echo "AArch64 cross compiler:"
           command -v ppcrossa64
 
-          fpc -iV
+          echo
           ppcrossa64 -iV
 
-
-      # ============================================================
-      # DOWNLOAD ANDROID NDK R20
-      # ============================================================
-      - name: Download Android NDK r20
-        run: |
-          set -euxo pipefail
-
-          NDK_URL="https://dl.google.com/android/repository/android-ndk-r20-linux-x86_64.zip"
-
-          curl -L \
-            --fail \
-            --retry 3 \
-            --retry-delay 2 \
-            -o /tmp/android-ndk-r20.zip \
-            "$NDK_URL"
-
-          mkdir -p "$HOME/android"
-
-          unzip -q \
-            /tmp/android-ndk-r20.zip \
-            -d "$HOME/android"
-
-          test -d "$HOME/android/android-ndk-r20"
-
-          echo "ANDROID_NDK_HOME=$HOME/android/android-ndk-r20" \
-            >> "$GITHUB_ENV"
+          echo
+          echo "Cross compiler:"
+          ls -lh "$CROSS_BIN/ppcrossa64"
 
 
       # ============================================================
-      # CONFIGURE AARCH64 ANDROID TOOLCHAIN
+      # INSTALL COMPLETE AARCH64 ANDROID FPC PACKAGE
       #
-      # FIX:
-      # GITHUB_PATH affects later steps only.
-      # Export TOOLCHAIN_BIN here so command -v works NOW.
+      # IMPORTANT:
+      # This package contains the Android target RTL.
+      # We DO NOT execute its Android compiler on Ubuntu.
+      #
+      # The package is installed into a separate prefix and the
+      # AArch64 Android RTL is then copied into the cross compiler's
+      # target unit directory.
       # ============================================================
-      - name: Configure Android AArch64 toolchain
+      - name: Install AArch64 Android RTL
         run: |
-          set -euxo pipefail
+          set -e
 
-          NDK="$ANDROID_NDK_HOME"
+          cd "$HOME"
+
+          FULL_FPC="$HOME/fpc-android-full"
+          FULL_INSTALL="$HOME/fpc-android-install"
+
+          rm -rf "$FULL_FPC"
+          rm -rf "$FULL_INSTALL"
+
+          mkdir -p "$FULL_FPC"
+          mkdir -p "$FULL_INSTALL"
+
+          curl -L -o fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.0/aarch64-android/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
+
+          tar -xf fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
+            -C "$FULL_FPC"
 
           echo
-          echo "NDK:"
-          echo "$NDK"
+          echo "Complete Android FPC package:"
+          find "$FULL_FPC" -maxdepth 3 -type f | sed -n '1,80p'
 
-          TOOLCHAIN_BIN="$(
-            find "$NDK/toolchains" \
-              -type f \
-              -name 'aarch64-linux-android-ld' \
-              -print \
-              | sed -n '1p' \
-              | xargs -r dirname
-          )"
+          INSTALLER=$(find "$FULL_FPC" -type f -name install.sh | head -n 1)
 
-          if [ -z "$TOOLCHAIN_BIN" ]; then
+          if [ -z "$INSTALLER" ]; then
+            echo "ERROR: Android FPC install.sh not found."
+
             echo
-            echo "ERROR: AArch64 Android linker was not found."
-
-            find "$NDK/toolchains" \
-              -type f \
-              -name '*aarch64*' \
-              -print \
-              | sed -n '1,100p'
+            echo "Archive contents:"
+            find "$FULL_FPC" -maxdepth 5 -print | sed -n '1,200p'
 
             exit 1
           fi
 
-          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
+          echo
+          echo "Android FPC installer:"
+          echo "$INSTALLER"
+
+          chmod +x "$INSTALLER"
+
+          cd "$(dirname "$INSTALLER")"
+
+          ./install.sh \
+            -D \
+            "$FULL_INSTALL"
+
+          echo
+          echo "Searching installed Android FPC package for system.ppu..."
+
+          SYSTEM_PPU=$(find "$FULL_INSTALL" \
+            -type f \
+            -path '*aarch64-android*' \
+            -name 'system.ppu' \
+            -print \
+            | sed -n '1p')
+
+          if [ -z "$SYSTEM_PPU" ]; then
+            echo "ERROR: system.ppu was not found after installing the complete AArch64 Android FPC package."
+
+            echo
+            echo "All system.ppu files:"
+            find "$FULL_INSTALL" \
+              -type f \
+              -name 'system.ppu' \
+              -print \
+              | sed -n '1,100p'
+
+            echo
+            echo "Installed FPC directory:"
+            find "$FULL_INSTALL" \
+              -maxdepth 5 \
+              -type d \
+              | sed -n '1,200p'
+
+            exit 1
+          fi
+
+          echo
+          echo "Found target RTL:"
+          echo "$SYSTEM_PPU"
+
+          RTL_DIR=$(dirname "$SYSTEM_PPU")
+
+          echo
+          echo "Target RTL directory:"
+          echo "$RTL_DIR"
+
+          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
+
+          rm -rf "$TARGET_UNITS"
+
+          mkdir -p "$TARGET_UNITS"
+
+          cp -a "$RTL_DIR"/. "$TARGET_UNITS"/
+
+          echo
+          echo "Installed target RTL:"
+          find "$TARGET_UNITS" \
+            -maxdepth 2 \
+            -type f \
+            | sed -n '1,120p'
+
+          echo
+          echo "Checking system.ppu..."
+
+          if [ ! -f "$TARGET_UNITS/system.ppu" ]; then
+            echo "ERROR: system.ppu was not copied correctly."
+            exit 1
+          fi
+
+          echo
+          echo "SUCCESS: AArch64 Android RTL installed."
+
+          ls -lh "$TARGET_UNITS/system.ppu"
+
+
+      # ============================================================
+      # INSTALL ANDROID NDK r20
+      # ============================================================
+      - name: Install Android NDK r20
+        run: |
+          set -e
+
+          cd "$HOME"
+
+          curl -L -o android-ndk-r20-linux-x86_64.zip \
+            https://dl.google.com/android/repository/android-ndk-r20-linux-x86_64.zip
+
+          rm -rf "$HOME/android-ndk-r20"
+
+          unzip -q android-ndk-r20-linux-x86_64.zip \
+            -d "$HOME"
+
+          mv "$HOME/android-ndk-r20" "$HOME/android-ndk-r20"
+
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r20" >> "$GITHUB_ENV"
+
+          echo
+          echo "Android NDK:"
+          "$HOME/android-ndk-r20/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang" \
+            --version
+
+
+      # ============================================================
+      # CONFIGURE ANDROID TOOLCHAIN
+      # ============================================================
+      - name: Configure Android AArch64 toolchain
+        run: |
+          set -e
+
+          NDK="$HOME/android-ndk-r20"
+
+          TOOLCHAIN_BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          if [ ! -d "$TOOLCHAIN_BIN" ]; then
+            echo "ERROR: Android NDK toolchain directory not found:"
+            echo "$TOOLCHAIN_BIN"
+            exit 1
+          fi
 
           echo "$TOOLCHAIN_BIN" >> "$GITHUB_PATH"
 
           export PATH="$TOOLCHAIN_BIN:$PATH"
 
           echo
-          echo "===== Android tools ====="
+          echo "Android toolchain:"
+          echo "$TOOLCHAIN_BIN"
+
+          echo
+          echo "Checking AArch64 Android tools..."
 
           command -v aarch64-linux-android-as
           command -v aarch64-linux-android-ld
           command -v aarch64-linux-android-ar
-          command -v aarch64-linux-android-ranlib
+          command -v aarch64-linux-android-strip
 
           echo
-          echo "===== Tool locations ====="
-
-          ls -lh \
-            "$TOOLCHAIN_BIN/aarch64-linux-android-as" \
-            "$TOOLCHAIN_BIN/aarch64-linux-android-ld" \
-            "$TOOLCHAIN_BIN/aarch64-linux-android-ar" \
-            "$TOOLCHAIN_BIN/aarch64-linux-android-ranlib"
+          echo "AArch64 Android assembler:"
+          aarch64-linux-android-as --version | head -n 1
 
 
       # ============================================================
-      # VERIFY ANDROID SYSROOT
+      # VERIFY FPC CROSS COMPILER + RTL
       # ============================================================
-      - name: Verify Android AArch64 sysroot
+      - name: Verify Free Pascal Android target
         run: |
-          set -euxo pipefail
+          set -e
 
-          NDK="$ANDROID_NDK_HOME"
-          SYSROOT="$NDK/platforms/android-21/arch-arm64"
+          export PATH="$HOME/fpc-install/bin/x86_64-linux:$HOME/fpc-install/bin:$PATH"
 
-          test -d "$SYSROOT"
-          test -d "$SYSROOT/usr"
-          test -d "$SYSROOT/usr/lib"
+          CROSS_COMPILER="$HOME/fpc-install/bin/x86_64-linux/ppcrossa64"
 
-          echo
-          echo "Android AArch64 API 21 sysroot:"
-          echo "$SYSROOT"
+          if [ ! -x "$CROSS_COMPILER" ]; then
+            echo "ERROR: AArch64 cross compiler not found:"
+            echo "$CROSS_COMPILER"
+            exit 1
+          fi
 
-          ls -lh "$SYSROOT/usr/lib" | sed -n '1,50p'
+          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
 
-
-      # ============================================================
-      # SHOW BOOOT SOURCE
-      # ============================================================
-      - name: Verify Booot project
-        run: |
-          set -euxo pipefail
-
-          test -f booot7.dpr
+          if [ ! -f "$TARGET_UNITS/system.ppu" ]; then
+            echo "ERROR: Target RTL system.ppu is missing:"
+            echo "$TARGET_UNITS/system.ppu"
+            exit 1
+          fi
 
           echo
-          echo "===== Booot project ====="
-
-          ls -lh booot7.dpr
+          echo "Cross compiler:"
+          "$CROSS_COMPILER" -iV
 
           echo
-          echo "===== Pascal source files ====="
+          echo "Target RTL:"
+          ls -lh "$TARGET_UNITS/system.ppu"
 
-          find . \
+          echo
+          echo "FPC executable:"
+          file "$CROSS_COMPILER"
+
+          echo
+          echo "RTL directory:"
+          find "$TARGET_UNITS" \
             -maxdepth 2 \
             -type f \
-            -name '*.pas' \
-            -print \
-            | sort
+            | sed -n '1,100p'
 
 
       # ============================================================
@@ -546,197 +396,155 @@ jobs:
       # ============================================================
       - name: Build Booot
         run: |
-          set -euxo pipefail
+          set -e
 
           export PATH="$HOME/fpc-install/bin/x86_64-linux:$HOME/fpc-install/bin:$PATH"
 
-          mkdir -p build
-          mkdir -p build/units
+          CROSS_COMPILER="$HOME/fpc-install/bin/x86_64-linux/ppcrossa64"
 
-          NDK="$ANDROID_NDK_HOME"
-          SYSROOT="$NDK/platforms/android-21/arch-arm64"
-          ANDROID_LIB="$SYSROOT/usr/lib"
-
-          FPC_LIB="$HOME/fpc-install/lib/fpc/3.2.0"
-          TARGET_UNITS="$FPC_LIB/units/aarch64-android"
+          TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
 
           echo
-          echo "========================================"
-          echo "Checking AArch64 Android RTL"
-          echo "========================================"
+          echo "Building Booot for Android AArch64..."
 
-          test -d "$TARGET_UNITS"
-          test -f "$TARGET_UNITS/rtl/system.ppu"
-
-          RTL_DIR="$TARGET_UNITS/rtl"
-
-          echo
-          echo "TARGET_UNITS=$TARGET_UNITS"
-          echo "RTL_DIR=$RTL_DIR"
-          echo "SYSTEM_PPU=$RTL_DIR/system.ppu"
-
-          echo
-          echo "===== RTL contents ====="
-
-          ls -lah "$RTL_DIR" \
-            | sed -n '1,100p'
-
-          echo
-          echo "========================================"
-          echo "Building Booot"
-          echo "Target: Android AArch64"
-          echo "FPC:    $(fpc -iV)"
-          echo "RTL:    $RTL_DIR"
-          echo "========================================"
-
-          fpc \
+          "$CROSS_COMPILER" \
             -Tandroid \
-            -Paarch64 \
+            -Parm64 \
             -O3 \
             -OoREGVAR \
-            -OoLOOPUNROLL \
-            -Xs \
-            -dBOOOT_ARM64 \
-            -dANDROID \
-            -dRELEASE \
-            -FEbuild \
-            -FUbuild/units \
-            -Fu"$RTL_DIR" \
+            -OoUNCERTAIN \
             -Fu"$TARGET_UNITS" \
-            -Fu"$TARGET_UNITS/*" \
-            -XPaarch64-linux-android- \
-            -k"--sysroot=$SYSROOT" \
-            -Fl"$ANDROID_LIB" \
-            -Fi"$SYSROOT/usr/include" \
+            -Fu"$TARGET_UNITS/rtl" \
             booot7.dpr
 
+          echo
+          echo "Build finished."
+
+          echo
+          echo "Generated files:"
+          ls -lah
+
 
       # ============================================================
-      # VERIFY EXECUTABLE
+      # FIND BOOOT BINARY
       # ============================================================
-      - name: Verify executable
+      - name: Verify Booot binary
         run: |
-          set -euxo pipefail
+          set -e
 
-          if [ ! -f build/booot7 ]; then
-            echo
+          echo
+          echo "Searching for Booot executable..."
+
+          BOOOT_BIN=$(find . \
+            -maxdepth 3 \
+            -type f \
+            -perm -111 \
+            ! -path './.git/*' \
+            | head -n 1)
+
+          if [ -z "$BOOOT_BIN" ]; then
             echo "ERROR: Booot executable was not produced."
-            echo
-            echo "Build directory:"
-
-            find build \
-              -maxdepth 4 \
-              -type f \
-              -print
-
             exit 1
           fi
 
-          chmod +x build/booot7
+          echo
+          echo "Booot binary:"
+          echo "$BOOOT_BIN"
+
+          file "$BOOOT_BIN"
 
           echo
-          echo "===== Booot binary ====="
+          echo "Binary size:"
+          ls -lh "$BOOOT_BIN"
 
-          ls -lh build/booot7
-          file build/booot7
+          if ! file "$BOOOT_BIN" | grep -qi "ARM aarch64"; then
+            echo "ERROR: Binary is not AArch64."
+            exit 1
+          fi
+
+          mv "$BOOOT_BIN" booot7-android-arm64
+
+          chmod +x booot7-android-arm64
 
           echo
-          echo "===== ELF ====="
-
-          readelf -h build/booot7 | \
-            grep -E 'Class|Machine|Type'
-
-          echo
-          echo "===== Dependencies ====="
-
-          readelf -d build/booot7 | \
-            grep NEEDED || true
+          echo "Final binary:"
+          file booot7-android-arm64
+          ls -lh booot7-android-arm64
 
 
       # ============================================================
-      # VERIFY NN FILES
+      # VERIFY NEURAL NETWORK FILES
+      #
+      # These are intentionally expected to already exist in the
+      # user's repository.
       # ============================================================
-      - name: Verify Booot neural networks
+      - name: Verify Booot neural network files
         run: |
-          set -euxo pipefail
+          set -e
 
-          for f in \
-            booot2.nn \
-            booot4.nn \
-            booot58.nn
-          do
-            if [ ! -f "$f" ]; then
-              echo "ERROR: Missing required network: $f"
+          echo
+          echo "Checking Booot neural network files..."
+
+          for NN in booot2.nn booot4.nn booot58.nn; do
+            if [ ! -f "$NN" ]; then
+              echo "ERROR: Missing neural network file:"
+              echo "$NN"
               exit 1
             fi
 
             echo
-            echo "$f:"
-
-            ls -lh "$f"
+            echo "$NN:"
+            ls -lh "$NN"
+            file "$NN"
           done
 
+          echo
+          echo "All Booot neural network files are present."
+
 
       # ============================================================
-      # PREPARE PACKAGE
+      # CREATE ANDROID ENGINE PACKAGE
       # ============================================================
-      - name: Prepare Android package
+      - name: Package Booot Android ARM64
         run: |
-          set -euxo pipefail
+          set -e
 
-          rm -rf package
-          mkdir -p package
+          mkdir -p booot-android-arm64
 
-          cp build/booot7 \
-            package/booot7
+          cp booot7-android-arm64 \
+            booot-android-arm64/
 
           cp booot2.nn \
-            package/booot2.nn
+            booot-android-arm64/
 
           cp booot4.nn \
-            package/booot4.nn
+            booot-android-arm64/
 
           cp booot58.nn \
-            package/booot58.nn
+            booot-android-arm64/
 
-          chmod +x package/booot7
-
-          echo
-          echo "===== Final package ====="
-
-          ls -lh package/
-
-
-      # ============================================================
-      # CREATE ZIP
-      # ============================================================
-      - name: Create ZIP
-        run: |
-          set -euxo pipefail
-
-          cd package
-
-          zip -9 \
-            ../booot-android-arm64.zip \
-            booot7 \
-            booot2.nn \
-            booot4.nn \
-            booot58.nn
-
-          cd ..
+          chmod +x \
+            booot-android-arm64/booot7-android-arm64
 
           echo
-          echo "===== ZIP ====="
+          echo "Android package:"
+          ls -lah booot-android-arm64
 
+          echo
+          echo "Creating ZIP..."
+
+          zip -r booot-android-arm64.zip \
+            booot-android-arm64/
+
+          echo
+          echo "Final ZIP:"
           ls -lh booot-android-arm64.zip
-
-          unzip -l booot-android-arm64.zip
 
 
       # ============================================================
       # UPLOAD ARTIFACT
       # ============================================================
-      - name: Upload artifact
+      - name: Upload Booot Android ARM64
         uses: actions/upload-artifact@v4
         with:
           name: booot-android-arm64
