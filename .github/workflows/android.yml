@@ -108,7 +108,7 @@ jobs:
             -maxdepth 4 \
             \( -type f -o -type l \) \
             | sort \
-            | head -200
+            | sed -n '1,200p'
 
 
       # ============================================================
@@ -208,8 +208,10 @@ jobs:
             -type f \
             \( \
               -name 'ppcrossa64' \
-              -o -name 'ppca64' \
-              -o -name 'ppc*a64' \
+              -o \
+              -name 'ppca64' \
+              -o \
+              -name 'ppc*a64' \
             \) \
             -print \
             | sort
@@ -332,7 +334,7 @@ jobs:
               -type f \
               -name 'aarch64-linux-android-ld' \
               -print \
-              | head -1 \
+              | sed -n '1p' \
               | xargs -r dirname
           )"
 
@@ -344,7 +346,7 @@ jobs:
               -type f \
               -name '*aarch64*' \
               -print \
-              | head -100
+              | sed -n '1,100p'
 
             exit 1
           fi
@@ -391,7 +393,7 @@ jobs:
           echo "Android AArch64 API 21 sysroot:"
           echo "$SYSROOT"
 
-          ls -lh "$SYSROOT/usr/lib" | head -50
+          ls -lh "$SYSROOT/usr/lib" | sed -n '1,50p'
 
 
       # ============================================================
@@ -460,7 +462,7 @@ jobs:
                 -path '*aarch64*android*' \
               \) \
               -print \
-              | head -1
+              | sed -n '1p'
           )"
 
           if [ -z "$SYSTEM_PPU" ]; then
@@ -468,6 +470,7 @@ jobs:
             echo "ERROR: AArch64 Android system.ppu was not found."
             echo
             echo "All system.ppu files installed by FPC:"
+
             find "$FPC_LIB" \
               -type f \
               -name 'system.ppu' \
@@ -476,6 +479,7 @@ jobs:
 
             echo
             echo "All AArch64 directories:"
+
             find "$FPC_LIB" \
               -type d \
               -iname '*aarch64*' \
@@ -484,12 +488,13 @@ jobs:
 
             echo
             echo "All AArch64 PPU files:"
+
             find "$FPC_LIB" \
               -type f \
               -path '*aarch64*' \
               -name '*.ppu' \
               -print \
-              | head -200
+              | sed -n '1,200p'
 
             exit 1
           fi
@@ -506,7 +511,7 @@ jobs:
           echo
           echo "===== RTL contents ====="
 
-          ls -lah "$RTL_DIR" | head -100
+          ls -lah "$RTL_DIR" | sed -n '1,100p'
 
           echo
           echo "========================================"
@@ -646,8 +651,8 @@ jobs:
             ../booot-android-arm64.zip \
             booot7 \
             booot2.nn \
-            booot4.nn \
-            booot58.nn
+            booot58.nn \
+            booot4.nn
 
           cd ..
 
