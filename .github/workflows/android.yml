@@ -182,9 +182,9 @@ jobs:
       # This package contains the Android target RTL.
       # We DO NOT execute its Android compiler on Ubuntu.
       #
-      # The package is installed into a separate prefix and the
-      # AArch64 Android RTL is then copied into the cross compiler's
-      # target unit directory.
+      # The installer places the target RTL under its own
+      # installation directory. We locate system.ppu there and
+      # copy the RTL into the cross compiler's target unit path.
       # ============================================================
       - name: Install AArch64 Android RTL
         run: |
@@ -238,7 +238,7 @@ jobs:
           echo
           echo "Searching installed Android FPC package for system.ppu..."
 
-          SYSTEM_PPU=$(find "$FULL_INSTALL" \
+          SYSTEM_PPU=$(find "$HOME/fpc-3.2.0" \
             -type f \
             -path '*aarch64-android*' \
             -name 'system.ppu' \
@@ -246,22 +246,23 @@ jobs:
             | sed -n '1p')
 
           if [ -z "$SYSTEM_PPU" ]; then
-            echo "ERROR: system.ppu was not found after installing the complete AArch64 Android FPC package."
+            echo "ERROR: system.ppu was not found in the installed Android FPC package."
 
             echo
-            echo "All system.ppu files:"
-            find "$FULL_INSTALL" \
+            echo "All system.ppu files under the FPC installation:"
+            find "$HOME/fpc-3.2.0" \
               -type f \
               -name 'system.ppu' \
               -print \
               | sed -n '1,100p'
 
             echo
-            echo "Installed FPC directory:"
-            find "$FULL_INSTALL" \
-              -maxdepth 5 \
+            echo "All aarch64-android directories:"
+            find "$HOME/fpc-3.2.0" \
               -type d \
-              | sed -n '1,200p'
+              -path '*aarch64-android*' \
+              -print \
+              | sed -n '1,100p'
 
             exit 1
           fi
