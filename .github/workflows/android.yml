@@ -218,6 +218,126 @@ jobs:
 
 
       # ============================================================
+      # DOWNLOAD COMPLETE AARCH64 ANDROID FPC PACKAGE
+      #
+      # IMPORTANT:
+      # This package contains the actual Android RTL.
+      #
+      # We DO NOT execute its Android compiler on Ubuntu.
+      # We only extract the target RTL files.
+      # ============================================================
+      - name: Download Free Pascal 3.2.0 AArch64 Android RTL
+        run: |
+          set -euxo pipefail
+
+          ANDROID_FPC_URL="https://downloads.freepascal.org/fpc/dist/3.2.0/x86_64-linux/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar"
+
+          curl -L \
+            --fail \
+            --retry 3 \
+            --retry-delay 2 \
+            -o /tmp/fpc-aarch64-android-full.tar \
+            "$ANDROID_FPC_URL"
+
+          mkdir -p "$HOME/fpc-android-full"
+
+          tar -xf \
+            /tmp/fpc-aarch64-android-full.tar \
+            -C "$HOME/fpc-android-full"
+
+          echo
+          echo "===== Complete Android FPC package ====="
+
+          find "$HOME/fpc-android-full" \
+            -maxdepth 3 \
+            -type f \
+            -print \
+            | sort \
+            | sed -n '1,200p'
+
+
+      # ============================================================
+      # INSTALL AARCH64 ANDROID RTL
+      #
+      # The cross compiler package contains ppcrossa64,
+      # but the target RTL is supplied by the complete
+      # AArch64 Android package.
+      # ============================================================
+      - name: Install AArch64 Android RTL
+        run: |
+          set -euxo pipefail
+
+          FPC_PREFIX="$HOME/fpc-install"
+          FULL_FPC="$HOME/fpc-android-full"
+
+          echo
+          echo "========================================"
+          echo "Searching complete Android package"
+          echo "for AArch64 RTL"
+          echo "========================================"
+
+          SYSTEM_PPU="$(
+            find "$FULL_FPC" \
+              -type f \
+              -path '*units/aarch64-android*' \
+              -name 'system.ppu' \
+              -print \
+              | sed -n '1p'
+          )"
+
+          if [ -z "$SYSTEM_PPU" ]; then
+            echo
+            echo "ERROR: system.ppu was not found in the"
+            echo "complete AArch64 Android FPC package."
+
+            echo
+            echo "All system.ppu files:"
+            find "$FULL_FPC" \
+              -type f \
+              -name 'system.ppu' \
+              -print \
+              | sort
+
+            exit 1
+          fi
+
+          SOURCE_UNITS="$(dirname "$(dirname "$SYSTEM_PPU")")"
+          TARGET_UNITS="$FPC_PREFIX/lib/fpc/3.2.0/units/aarch64-android"
+
+          echo
+          echo "SYSTEM_PPU=$SYSTEM_PPU"
+          echo "SOURCE_UNITS=$SOURCE_UNITS"
+          echo "TARGET_UNITS=$TARGET_UNITS"
+
+          test -f "$SYSTEM_PPU"
+          test -d "$SOURCE_UNITS"
+
+          mkdir -p "$TARGET_UNITS"
+
+          echo
+          echo "Copying complete AArch64 Android units..."
+
+          cp -a \
+            "$SOURCE_UNITS/." \
+            "$TARGET_UNITS/"
+
+          echo
+          echo "===== Installed target RTL ====="
+
+          test -f "$TARGET_UNITS/rtl/system.ppu"
+
+          ls -lh \
+            "$TARGET_UNITS/rtl/system.ppu"
+
+          echo
+          echo "===== Target RTL directory ====="
+
+          ls -lah \
+            "$TARGET_UNITS/rtl" \
+            | sed -n '1,100p'
+
+
+      # ============================================================
       # VERIFY CROSS COMPILER
       # ============================================================
       - name: Verify AArch64 cross compiler
@@ -437,87 +557,36 @@ jobs:
           SYSROOT="$NDK/platforms/android-21/arch-arm64"
           ANDROID_LIB="$SYSROOT/usr/lib"
 
-          # ============================================================
-          # FIND THE ACTUAL AARCH64 ANDROID RTL
-          #
-          # Do not assume where system.ppu is located.
-          # The cross-compiler package has already been installed;
-          # locate its actual RTL directory.
-          # ============================================================
-
           FPC_LIB="$HOME/fpc-install/lib/fpc/3.2.0"
+          TARGET_UNITS="$FPC_LIB/units/aarch64-android"
 
           echo
           echo "========================================"
-          echo "Searching for AArch64 Android RTL"
+          echo "Checking AArch64 Android RTL"
           echo "========================================"
 
-          SYSTEM_PPU="$(
-            find "$FPC_LIB" \
-              -type f \
-              -name 'system.ppu' \
-              \( \
-                -path '*aarch64-android*' \
-                -o \
-                -path '*aarch64*android*' \
-              \) \
-              -print \
-              | sed -n '1p'
-          )"
+          test -d "$TARGET_UNITS"
+          test -f "$TARGET_UNITS/rtl/system.ppu"
 
-          if [ -z "$SYSTEM_PPU" ]; then
-            echo
-            echo "ERROR: AArch64 Android system.ppu was not found."
-            echo
-            echo "All system.ppu files installed by FPC:"
-
-            find "$FPC_LIB" \
-              -type f \
-              -name 'system.ppu' \
-              -print \
-              | sort
-
-            echo
-            echo "All AArch64 directories:"
-
-            find "$FPC_LIB" \
-              -type d \
-              -iname '*aarch64*' \
-              -print \
-              | sort
-
-            echo
-            echo "All AArch64 PPU files:"
-
-            find "$FPC_LIB" \
-              -type f \
-              -path '*aarch64*' \
-              -name '*.ppu' \
-              -print \
-              | sed -n '1,200p'
-
-            exit 1
-          fi
-
-          RTL_DIR="$(dirname "$SYSTEM_PPU")"
+          RTL_DIR="$TARGET_UNITS/rtl"
 
           echo
-          echo "SYSTEM_PPU=$SYSTEM_PPU"
+          echo "TARGET_UNITS=$TARGET_UNITS"
           echo "RTL_DIR=$RTL_DIR"
-
-          test -f "$SYSTEM_PPU"
-          test -d "$RTL_DIR"
+          echo "SYSTEM_PPU=$RTL_DIR/system.ppu"
 
           echo
           echo "===== RTL contents ====="
 
-          ls -lah "$RTL_DIR" | sed -n '1,100p'
+          ls -lah "$RTL_DIR" \
+            | sed -n '1,100p'
 
           echo
           echo "========================================"
           echo "Building Booot"
           echo "Target: Android AArch64"
           echo "FPC:    $(fpc -iV)"
+          echo "RTL:    $RTL_DIR"
           echo "========================================"
 
           fpc \
@@ -533,8 +602,8 @@ jobs:
             -FEbuild \
             -FUbuild/units \
             -Fu"$RTL_DIR" \
-            -Fu"$FPC_LIB/units/aarch64-android" \
-            -Fu"$FPC_LIB/units/aarch64-android/*" \
+            -Fu"$TARGET_UNITS" \
+            -Fu"$TARGET_UNITS/*" \
             -XPaarch64-linux-android- \
             -k"--sysroot=$SYSROOT" \
             -Fl"$ANDROID_LIB" \
@@ -651,8 +720,8 @@ jobs:
             ../booot-android-arm64.zip \
             booot7 \
             booot2.nn \
-            booot58.nn \
-            booot4.nn
+            booot4.nn \
+            booot58.nn
 
           cd ..
 
