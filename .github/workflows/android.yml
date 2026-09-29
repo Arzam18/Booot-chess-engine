@@ -73,10 +73,6 @@ jobs:
 
       # ============================================================
       # INSTALL NATIVE FPC
-      #
-      # IMPORTANT:
-      # The FPC archive is an installer package.
-      # It must be installed with install.sh.
       # ============================================================
       - name: Install Free Pascal host compiler
         run: |
@@ -179,9 +175,6 @@ jobs:
 
       # ============================================================
       # INSTALL AARCH64 ANDROID CROSS COMPILER
-      #
-      # The FPC installer requires a native FPC of the same version.
-      # That is why the host installation above MUST happen first.
       # ============================================================
       - name: Install AArch64 Android cross compiler
         run: |
@@ -224,13 +217,6 @@ jobs:
 
       # ============================================================
       # VERIFY CROSS COMPILER
-      #
-      # FIX:
-      # ppcrossa64 is installed under:
-      #
-      # $HOME/fpc-install/bin/x86_64-linux/ppcrossa64
-      #
-      # It is NOT directly under $HOME/fpc-install/bin.
       # ============================================================
       - name: Verify AArch64 cross compiler
         run: |
@@ -326,6 +312,10 @@ jobs:
 
       # ============================================================
       # CONFIGURE AARCH64 ANDROID TOOLCHAIN
+      #
+      # FIX:
+      # GITHUB_PATH affects later steps only.
+      # Export TOOLCHAIN_BIN here so command -v works NOW.
       # ============================================================
       - name: Configure Android AArch64 toolchain
         run: |
@@ -361,7 +351,11 @@ jobs:
 
           echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN"
 
+          # Persist for following GitHub Actions steps.
           echo "$TOOLCHAIN_BIN" >> "$GITHUB_PATH"
+
+          # Also activate immediately in THIS step.
+          export PATH="$TOOLCHAIN_BIN:$PATH"
 
           echo
           echo "===== Android tools ====="
@@ -370,6 +364,15 @@ jobs:
           command -v aarch64-linux-android-ld
           command -v aarch64-linux-android-ar
           command -v aarch64-linux-android-ranlib
+
+          echo
+          echo "===== Tool locations ====="
+
+          ls -lh \
+            "$TOOLCHAIN_BIN/aarch64-linux-android-as" \
+            "$TOOLCHAIN_BIN/aarch64-linux-android-ld" \
+            "$TOOLCHAIN_BIN/aarch64-linux-android-ar" \
+            "$TOOLCHAIN_BIN/aarch64-linux-android-ranlib"
 
 
       # ============================================================
