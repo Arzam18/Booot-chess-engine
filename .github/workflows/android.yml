@@ -436,28 +436,77 @@ jobs:
           ANDROID_LIB="$SYSROOT/usr/lib"
 
           # ============================================================
-          # FIX:
-          # The AArch64 Android RTL base directory must be included.
-          # The previous workflow used only:
+          # FIND THE ACTUAL AARCH64 ANDROID RTL
           #
-          #   units/aarch64-android/*
-          #
-          # which does not include system.ppu in the base directory.
+          # Do not assume where system.ppu is located.
+          # The cross-compiler package has already been installed;
+          # locate its actual RTL directory.
           # ============================================================
 
-          FPC_UNITS="$HOME/fpc-install/lib/fpc/3.2.0/units/aarch64-android"
-
-          test -d "$FPC_UNITS"
-          test -f "$FPC_UNITS/system.ppu"
+          FPC_LIB="$HOME/fpc-install/lib/fpc/3.2.0"
 
           echo
           echo "========================================"
-          echo "AArch64 Android RTL"
+          echo "Searching for AArch64 Android RTL"
           echo "========================================"
 
-          echo "FPC_UNITS=$FPC_UNITS"
+          SYSTEM_PPU="$(
+            find "$FPC_LIB" \
+              -type f \
+              -name 'system.ppu' \
+              \( \
+                -path '*aarch64-android*' \
+                -o \
+                -path '*aarch64*android*' \
+              \) \
+              -print \
+              | head -1
+          )"
 
-          ls -lh "$FPC_UNITS/system.ppu"
+          if [ -z "$SYSTEM_PPU" ]; then
+            echo
+            echo "ERROR: AArch64 Android system.ppu was not found."
+            echo
+            echo "All system.ppu files installed by FPC:"
+            find "$FPC_LIB" \
+              -type f \
+              -name 'system.ppu' \
+              -print \
+              | sort
+
+            echo
+            echo "All AArch64 directories:"
+            find "$FPC_LIB" \
+              -type d \
+              -iname '*aarch64*' \
+              -print \
+              | sort
+
+            echo
+            echo "All AArch64 PPU files:"
+            find "$FPC_LIB" \
+              -type f \
+              -path '*aarch64*' \
+              -name '*.ppu' \
+              -print \
+              | head -200
+
+            exit 1
+          fi
+
+          RTL_DIR="$(dirname "$SYSTEM_PPU")"
+
+          echo
+          echo "SYSTEM_PPU=$SYSTEM_PPU"
+          echo "RTL_DIR=$RTL_DIR"
+
+          test -f "$SYSTEM_PPU"
+          test -d "$RTL_DIR"
+
+          echo
+          echo "===== RTL contents ====="
+
+          ls -lah "$RTL_DIR" | head -100
 
           echo
           echo "========================================"
@@ -478,8 +527,9 @@ jobs:
             -dRELEASE \
             -FEbuild \
             -FUbuild/units \
-            -Fu"$FPC_UNITS" \
-            -Fu"$FPC_UNITS/*" \
+            -Fu"$RTL_DIR" \
+            -Fu"$FPC_LIB/units/aarch64-android" \
+            -Fu"$FPC_LIB/units/aarch64-android/*" \
             -XPaarch64-linux-android- \
             -k"--sysroot=$SYSROOT" \
             -Fl"$ANDROID_LIB" \
