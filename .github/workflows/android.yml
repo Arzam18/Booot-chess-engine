@@ -54,8 +54,8 @@ jobs:
 
           cd "$HOME"
 
-          curl -L -o fpc-3.2.2-x86_64-linux.tar \
-            https://downloads.freepascal.org/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2.x86_64-linux.tar
+          curl -fL -o fpc-3.2.2-x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2-x86_64-linux.tar
 
           mkdir -p "$HOME/fpc-host"
 
@@ -94,6 +94,10 @@ jobs:
 
       # ============================================================
       # INSTALL AARCH64 ANDROID CROSS COMPILER
+      #
+      # IMPORTANT:
+      # The official Free Pascal 3.2.2 download page provides this
+      # package through the Free Pascal mirror.
       # ============================================================
       - name: Install Free Pascal AArch64 Android cross compiler
         run: |
@@ -101,8 +105,8 @@ jobs:
 
           cd "$HOME"
 
-          curl -L -o fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar \
-            https://downloads.freepascal.org/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar
+          curl -fL -o fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar \
+            https://mirror.freemirror.org/pub/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar
 
           mkdir -p "$HOME/fpc-cross"
 
@@ -176,15 +180,14 @@ jobs:
 
 
       # ============================================================
-      # INSTALL COMPLETE AARCH64 ANDROID FPC PACKAGE
+      # INSTALL AARCH64 ANDROID RTL
       #
       # IMPORTANT:
-      # This package contains the Android target RTL.
-      # We DO NOT execute its Android compiler on Ubuntu.
+      # The 3.2.0 AArch64 Android package is the official package
+      # that provides the ARM64 Android installation.
       #
-      # The installer places the target RTL under its own
-      # installation directory. We locate system.ppu there and
-      # copy the RTL into the cross compiler's target unit path.
+      # We do NOT execute its Android compiler on Ubuntu.
+      # We inspect the package for the target RTL.
       # ============================================================
       - name: Install AArch64 Android RTL
         run: |
@@ -193,88 +196,74 @@ jobs:
           cd "$HOME"
 
           FULL_FPC="$HOME/fpc-android-full"
-          FULL_INSTALL="$HOME/fpc-android-install"
 
           rm -rf "$FULL_FPC"
-          rm -rf "$FULL_INSTALL"
 
           mkdir -p "$FULL_FPC"
-          mkdir -p "$FULL_INSTALL"
 
-          curl -L -o fpc-3.2.2-aarch64-android.built-on-x86_64-linux.tar \
-            https://downloads.freepascal.org/fpc/dist/3.2.2/aarch64-android/fpc-3.2.2-aarch64-android.built-on-x86_64-linux.tar
+          curl -fL -o fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
+            https://downloads.freepascal.org/fpc/dist/3.2.0/aarch64-android/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
 
-          tar -xf fpc-3.2.2-aarch64-android.built-on-x86_64-linux.tar \
+          echo
+          echo "Checking Android FPC archive..."
+
+          file fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
+
+          ls -lh fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
+
+          tar -tf fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
+            | sed -n '1,100p'
+
+          tar -xf fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
             -C "$FULL_FPC"
 
           echo
           echo "Complete Android FPC package:"
-          find "$FULL_FPC" -maxdepth 3 -type f | sed -n '1,80p'
-
-          INSTALLER=$(find "$FULL_FPC" -type f -name install.sh | head -n 1)
-
-          if [ -z "$INSTALLER" ]; then
-            echo "ERROR: Android FPC install.sh not found."
-
-            echo
-            echo "Archive contents:"
-            find "$FULL_FPC" -maxdepth 5 -print | sed -n '1,200p'
-
-            exit 1
-          fi
-
-          echo
-          echo "Android FPC installer:"
-          echo "$INSTALLER"
-
-          chmod +x "$INSTALLER"
-
-          cd "$(dirname "$INSTALLER")"
-
-          ./install.sh \
-            -D \
-            "$FULL_INSTALL"
-
-          echo
-          echo "Searching installed Android FPC package for system.ppu..."
-
-          SYSTEM_PPU=$(find "$HOME/fpc-3.2.2" \
+          find "$FULL_FPC" \
+            -maxdepth 5 \
             -type f \
-            -path '*aarch64-android*' \
+            | sed -n '1,150p'
+
+          echo
+          echo "Searching archive for system.ppu..."
+
+          SYSTEM_PPU=$(find "$FULL_FPC" \
+            -type f \
             -name 'system.ppu' \
             -print \
             | sed -n '1p')
 
           if [ -z "$SYSTEM_PPU" ]; then
-            echo "ERROR: system.ppu was not found in the installed Android FPC package."
+            echo
+            echo "ERROR: system.ppu was not found in the Android FPC package."
 
             echo
-            echo "All system.ppu files under the FPC installation:"
-            find "$HOME/fpc-3.2.2" \
+            echo "All .ppu files:"
+            find "$FULL_FPC" \
               -type f \
-              -name 'system.ppu' \
+              -name '*.ppu' \
               -print \
-              | sed -n '1,100p'
+              | sed -n '1,200p'
 
             echo
-            echo "All aarch64-android directories:"
-            find "$HOME/fpc-3.2.2" \
+            echo "All RTL directories:"
+            find "$FULL_FPC" \
               -type d \
-              -path '*aarch64-android*' \
+              -iname '*rtl*' \
               -print \
-              | sed -n '1,100p'
+              | sed -n '1,200p'
 
             exit 1
           fi
 
           echo
-          echo "Found target RTL:"
+          echo "Found system.ppu:"
           echo "$SYSTEM_PPU"
 
           RTL_DIR=$(dirname "$SYSTEM_PPU")
 
           echo
-          echo "Target RTL directory:"
+          echo "RTL directory:"
           echo "$RTL_DIR"
 
           TARGET_UNITS="$HOME/fpc-install/lib/fpc/3.2.2/units/aarch64-android"
@@ -290,7 +279,7 @@ jobs:
           find "$TARGET_UNITS" \
             -maxdepth 2 \
             -type f \
-            | sed -n '1,120p'
+            | sed -n '1,150p'
 
           echo
           echo "Checking system.ppu..."
@@ -315,7 +304,7 @@ jobs:
 
           cd "$HOME"
 
-          curl -L -o android-ndk-r20-linux-x86_64.zip \
+          curl -fL -o android-ndk-r20-linux-x86_64.zip \
             https://dl.google.com/android/repository/android-ndk-r20-linux-x86_64.zip
 
           rm -rf "$HOME/android-ndk-r20"
