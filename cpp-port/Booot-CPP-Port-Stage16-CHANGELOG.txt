@@ -1,0 +1,20 @@
+Booot 7.4 C++ Port — Stage 16 (reissued: repository structure)
+
+- Preserved the original Pascal project files at repository root:
+  booot7.dpr, u*.pas, booot7.dproj, booot7.lpi, booot7.res, resource.rc,
+  patch_nn.py, and the original Pascal README/.gitignore content.
+- Preserved the original Pascal GitHub Actions workflow as the inert reference
+  file original_pascal_android.yml; it is not under .github/workflows.
+- Moved all C++ port source, tests, build scripts, and stage documentation into
+  cpp-port/.
+- Kept the active C++ Android workflow at repository-root
+  .github/workflows/android-arm64.yml, as required by GitHub Actions.
+- Updated the workflow to run build and ELF verification from cpp-port/ only.
+- Updated Stage 16 tests to assert that Pascal source is at root and no Pascal
+  source is present in cpp-port/.
+- Documented that booot2.nn, booot4.nn, and booot58.nn belong in repository root;
+  the recovered archive still does not contain these network files.
+- No original Pascal source file was modified; all 23 original Pascal project
+  files were restored byte-for-byte from the prior Stage 16 archive.
+
+Android NDK cross-compilation remains pending an actual GitHub Actions run.

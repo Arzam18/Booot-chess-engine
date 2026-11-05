@@ -1,0 +1,22 @@
+Booot 7.4 C++ Port — Stage 15 changelog
+
+Added:
+- UCI protocol handshake and engine identity.
+- Asynchronous search worker with safe stop/join and synchronized output.
+- startpos/FEN position parsing with legal move application and repetition-key history.
+- go depth/nodes/movetime/clock/increment/movestogo/infinite mapping.
+- Iterative info output with score, nodes, time, NPS and PV; bestmove output.
+- UCI options: Hash, fixed Threads=1, Move Overhead, Clear Hash.
+- Safe transposition-table resizing.
+- Host UCI executable entry point, original NNUE file loading, and build script.
+- GCC/Clang focused tests and cumulative Stage 1–15 regression integration.
+
+Limitations:
+- No original network binaries were supplied; executable requires booot2.nn,
+  booot4.nn, and booot58.nn at runtime.
+- Stage 15 sanitizer checks timed out; no sanitizer pass is claimed.
+- No Android NDK/device build yet; no SMP, MultiPV, ponder-hit, or searchmoves.
+
+Preserved:
+- All pre-existing search/evaluation/board modules and original Pascal sources.
+- Original NNUE network format loader; no fabricated models or converted files.

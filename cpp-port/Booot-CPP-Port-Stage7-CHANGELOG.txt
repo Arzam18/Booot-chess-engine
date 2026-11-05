@@ -1,0 +1,16 @@
+Booot 7.4 C++ Port — Stage 7 changes
+
+Updated:
+- booot_nnue.hpp: NetworkSet, NNUEState, NNUEUndo, incremental state API,
+  evaluation API, and paired board/NNUE wrapper declarations.
+- booot_nnue.cpp: incremental feature deltas, frame/mirror rebuild decisions,
+  network-switch refresh, null-move behavior, and state/position validation.
+- run_all_tests.sh: complete Stage 1–7 test runner; production modules compile once.
+- run_sanitizer_tests.sh: Stage 1–7 ASan/UBSan coverage, including incremental NNUE.
+- BOOOT-CPP-PORT.md: updated project status and remaining work.
+
+Added:
+- booot_nnue_move.cpp: board + NNUE make/unmake wrappers with rollback on failure.
+- booot_nnue_update_test.cpp: synthetic-network differential tests and random walk.
+- BOOOT-CPP-PORT-STAGE7.md: integration details, API examples, and test coverage.
+- README-STAGE7.txt: brief Stage 7 summary.

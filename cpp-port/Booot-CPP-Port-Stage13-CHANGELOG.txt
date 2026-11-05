@@ -1,0 +1,10 @@
+Booot 7.4 C++ Port — Stage 13 changelog
+
+- Added an explicit cut_node parameter to recursive alpha-beta calls.
+- Added opt-in two-ply internal iterative reduction (IIR), with original PV/cut thresholds.
+- Added opt-in late-move count pruning (LMP), matching CountMoveDepth and PrunningCount.
+- Corrected searched-move counting to increment before selective pruning.
+- Added individual continuation-history lookup and two-ply history pruning.
+- Added IIR/LMP/history-prune counters to SearchResult.
+- Added Stage 13 tests, sanitizer runner, cumulative status, and documentation.
+- Original Pascal files are retained unchanged.

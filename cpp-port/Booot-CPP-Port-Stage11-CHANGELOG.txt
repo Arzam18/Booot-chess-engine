@@ -1,0 +1,29 @@
+Booot 7.4 C++ Port — Stage 11 change log
+
+Implemented:
+- Added source-derived ProbCut depth, reduction and margin constants (5 / 4 / 85).
+- Added non-PV/non-check ProbCut eligibility and the source TT bad-ProbCut guard.
+- Added hash-move-first and capture/promotion candidate verification with legality and SEE.
+- Added narrow-window quiescence gate, depth-minus-four reduced alpha-beta verification,
+  and TT lower-bound storage.
+- Added singular-node eligibility at depth 6, same-ply excluded-hash-move verification,
+  single/double/negative extension rules, double-extension tracking, and quiet-singular LMR relief.
+- Added diagnostic SearchResult counters and regressions for an actual ProbCut cutoff
+  and a forced single-evasion singular extension.
+- Added Stage 11 focused and sanitizer runners; updated cumulative regression labels.
+
+Fidelity note:
+- The current ProbCut prefilter uses the C++ quiescence routine. The original Pascal
+  dedicated FV/NextFV quiet-check, futility and move-selection details remain future work.
+
+Verification on final source tree:
+- GCC focused Stage 11 tests: PASS.
+- Clang 17 focused Stage 11 tests: PASS.
+- GCC cumulative QUICK=1 Stage 1–11 suite: PASS (deep perft skipped).
+- GCC ASan/UBSan Stage 11 tests: PASS.
+- Clang cumulative quick suite was not completed within the execution window.
+- Android NDK build, original-network parity, UCI and on-device validation are not claimed.
+
+All original Pascal files under original_pascal/ are byte-identical to Stage 10.
+The recovered Stage 10 archive did not contain booot2.nn, booot4.nn, booot58.nn or
+resource.res; no network/resource binaries were fabricated or changed in Stage 11.

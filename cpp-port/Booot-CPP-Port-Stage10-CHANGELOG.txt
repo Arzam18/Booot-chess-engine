@@ -1,0 +1,8 @@
+Stage 10
+- Added pawn correction history (2 x 32768 signed 16-bit cells).
+- Added White and Black non-pawn correction histories (2 x 32768 each).
+- Ported Booot ScaleEval correction terms and update eligibility from uSearch.pas.
+- Added gravity updates with CorrDiv=512 and CorrLimit=128.
+- clear_history() now resets all correction tables.
+- Added correction-history search lifecycle regression test.
+- GCC and Clang 17 focused tests pass; sanitizer attempt exceeded execution window and is not claimed.

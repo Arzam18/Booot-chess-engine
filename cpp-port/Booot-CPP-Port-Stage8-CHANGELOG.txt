@@ -1,0 +1,22 @@
+Booot 7.4 C++ Port — Stage 8
+
+Added:
+- booot_eval.hpp/.cpp: complete uEval-style evaluator dispatcher joining special endgames and incremental NNUE.
+- booot_move_order.hpp/.cpp: signed-piece quiet history, four continuation history channels, capture history, killer moves, countermoves, gravity updates, quiet/capture/evasion scoring, and staged move picker.
+- booot_eval_move_order_test.cpp: Stage 8 evaluator and move-order regression coverage.
+- run_stage8_tests.sh and run_stage8_sanitizers.sh: focused Stage 8 verification commands.
+
+Updated:
+- run_all_tests.sh and run_sanitizer_tests.sh include the Stage 8 modules and tests.
+- run_all_tests.sh supports QUICK=1 to use depth-1 perft smoke checks instead of deep perft.
+- BOOOT-CPP-PORT.md reflects Stage 8 and the remaining search/UCI/Android work.
+
+Verified:
+- Focused Stage 8 tests pass with GCC.
+- Focused Stage 8 tests pass with Clang 17.
+- Focused Stage 8 ASan/UBSan tests pass.
+- The accumulated QUICK=1 host run and full accumulated sanitizer run exceeded the environment's 600-second limit. They are not claimed as completed passes.
+
+Not included / still pending:
+- Original booot2.nn, booot4.nn, booot58.nn model files.
+- Alpha-beta search, pruning, TT, repetition, threading, time management, UCI, Android NDK build, and phone verification.

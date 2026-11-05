@@ -1,0 +1,33 @@
+Booot 7.4 C++ Port — Stage 12 change log
+
+Implemented:
+- Added `fv_search()` as the dedicated port of the active Pascal FV routine.
+- Added source-derived q-depth and TT bound handling, static evaluation refinement,
+  stand-pat behavior, DeltaMargin 80 and source piece futility values.
+- Added NextFV ordering for hash move, scored captures/promotions, quiet checks
+  at depth >= 0, and legal evasions while in check.
+- Added SEE margins 0/1, shallow quiet candidate pruning, and deep recapture-only
+  filtering at depth <= -5.
+- Replaced the primary alpha-beta leaf, razoring and ProbCut first-stage verifier
+  with FV search.
+- Restricted ProbCut candidates to capture-flag moves as in NextProbCut.
+- Added SearchResult diagnostics for FV calls, beta cutoffs, quiet checks,
+  check nodes and searched evasions.
+- Added deterministic quiet-check and checked-evasion search fixtures.
+- Updated cumulative test labels and added Stage 12 focused/sanitizer runners.
+
+Verification on final Stage 12 tree:
+- GCC focused Stage 12 tests: PASS.
+- Clang 17 focused Stage 12 tests: PASS.
+- GCC cumulative QUICK=1 Stage 1–12 regression suite: PASS (deep perft skipped).
+- GCC ASan/UBSan Stage 12 tests: PASS.
+- One combined validation command timed out during Stage 4; the separated
+  cumulative quick rerun completed successfully.
+
+Fidelity boundaries:
+- Pascal ScoreCaptures ordering may differ from the current C++ capture-history scorer.
+- Pascal FVQuiet (offline FVEval utility) is not included.
+- UCI, Android NDK/runtime, original NNUE parity, time management and threading
+  are not claimed complete.
+- All original_pascal files remain byte-identical to Stage 11; missing NNUE
+  network binaries and resource.res were not invented.

@@ -1,0 +1,22 @@
+Booot 7.4 C++ Port — Stage 9 changelog
+
+Added:
+- booot_search.hpp: search, result/limits, TT entry and 4-way TT interfaces.
+- booot_search.cpp: iterative deepening, aspiration windows, negamax/PVS,
+  quiescence, TT, repetition/rule-50, null move, pruning, LMR and PV handling.
+- booot_search_test.cpp: TT, root restoration, legal PV, mate/stalemate,
+  repetition/rule-50, node-limit and synthetic real-NNUE integration tests.
+- run_stage9_tests.sh and run_stage9_sanitizers.sh.
+
+Updated:
+- booot_move_order.cpp: quiet phase now stays active until quiet candidates
+  are exhausted. Search's mate-in-one regression exposed the previous bug.
+- run_all_tests.sh: Stage 9 compile/test added; labels and final summary now
+  include all nine stages.
+
+Verification:
+- GCC focused Stage 9 tests: PASS.
+- Clang 17 focused Stage 9 tests: PASS.
+- Stage 9 ASan/UBSan: PASS.
+- QUICK=1 accumulated Stage 1–9 regression: PASS.
+- Deep Stage 3 perft counts are skipped by QUICK=1.

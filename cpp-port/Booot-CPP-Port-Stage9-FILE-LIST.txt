@@ -1,0 +1,26 @@
+Booot-CPP-Port-Stage9 file inventory
+
+New Stage 9:
+  booot_search.hpp
+  booot_search.cpp
+  booot_search_test.cpp
+  run_stage9_tests.sh
+  run_stage9_sanitizers.sh
+  BOOOT-CPP-PORT-STAGE9.md
+  README-STAGE9.txt
+  Booot-CPP-Port-Stage9-CHANGELOG.txt
+
+Updated in Stage 9:
+  booot_move_order.cpp
+  run_all_tests.sh
+  BOOOT-CPP-PORT.md
+
+Accumulated full source archive:
+  All Stage 1–9 C++ source, previous regression tests, helper build scripts,
+  documentation, and original_pascal/.
+
+Not bundled (not present in recovered original source ZIP):
+  booot2.nn
+  booot4.nn
+  booot58.nn
+  user's fork resource.res

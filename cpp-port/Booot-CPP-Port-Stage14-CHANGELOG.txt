@@ -1,0 +1,22 @@
+BOOOT 7.4 C++ PORT — STAGE 14 CHANGELOG
+
+1. Added a distinct root-search routine; the root no longer enters the ordinary interior alpha-beta function as a regular node.
+2. Preserved the generated legal root list and promoted only the best move to index zero between iterations, matching Pascal UpdateList behavior.
+3. Added root PVS and root late-move reductions for the fourth and later quiet root moves, with reduced-depth, full-depth null-window, and full-window re-search steps.
+4. Added root quiet/capture history feedback and failed-move penalties.
+5. Added Pascal-style aspiration windows after depth five, expanding windows on fail-low/high and applying the fail-high retry-depth adjustment.
+6. Added SearchLimits fixed movetime, remaining clock, increment, moves-to-go, overhead, and explicit soft/hard deadline fields.
+7. Added automatic soft/hard allocation, periodic hard deadline polling, soft deadline checks between completed iterations, and stable-result/legal-fallback preservation.
+8. Added SearchResult root-search, root-LMR, aspiration, elapsed-time, budget, and timeout diagnostics.
+9. Added Stage 14 focused tests and a Stage 14 ASan/UBSan script; updated cumulative test labels.
+
+Validation:
+- GCC focused tests PASS.
+- Clang 17 focused tests PASS.
+- GCC Stage 1–14 QUICK cumulative suite PASS (deep perft skipped).
+- GCC ASan/UBSan focused tests PASS.
+- Complete-source archive extraction + checksum + focused regression PASS.
+- Modified-only Stage 13 overlay + checksum + focused regression PASS.
+- Original Pascal source byte comparison PASS; both ZIP checksums PASS.
+
+The source is not yet a UCI or Android executable. See BOOOT-CPP-PORT-STAGE14.md for fidelity boundaries.
