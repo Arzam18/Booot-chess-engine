@@ -3,14 +3,6 @@ name: Build Booot for Android ARM64
 on:
   workflow_dispatch:
 
-  push:
-    paths:
-      - "*.pas"
-      - "*.dpr"
-      - "*.inc"
-      - "*.rc"
-      - ".github/workflows/android.yml"
-
 permissions:
   contents: read
 
@@ -106,7 +98,7 @@ jobs:
           cd "$HOME"
 
           curl -fL -o fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar \
-            https://mirror.freemirror.org/pub/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar
+            https://downloads.freepascal.org/fpc/dist/3.2.2/x86_64-linux/fpc-3.2.2-aarch64-android.cross.x86_64-linux.tar
 
           mkdir -p "$HOME/fpc-cross"
 
@@ -201,20 +193,20 @@ jobs:
 
           mkdir -p "$FULL_FPC"
 
-          curl -fL -o fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
-            https://downloads.freepascal.org/fpc/dist/3.2.0/aarch64-android/fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
+          curl -fL -o fpc-3.2.2.aarch64-android.tar \
+            https://downloads.sourceforge.net/project/freepascal/Android/3.2.2/fpc-3.2.2.aarch64-android.tar
 
           echo
           echo "Checking Android FPC archive..."
 
-          file fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
+          file fpc-3.2.2.aarch64-android.tar
 
-          ls -lh fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar
+          ls -lh fpc-3.2.2.aarch64-android.tar
 
-          tar -tf fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
+          tar -tf fpc-3.2.2.aarch64-android.tar \
             | sed -n '1,100p'
 
-          tar -xf fpc-3.2.0-aarch64-android.built-on-x86_64-linux.tar \
+          tar -xf fpc-3.2.2.aarch64-android.tar \
             -C "$FULL_FPC"
 
           echo
@@ -312,8 +304,6 @@ jobs:
           unzip -q android-ndk-r20-linux-x86_64.zip \
             -d "$HOME"
 
-          mv "$HOME/android-ndk-r20" "$HOME/android-ndk-r20"
-
           echo "ANDROID_NDK_HOME=$HOME/android-ndk-r20" >> "$GITHUB_ENV"
 
           echo
@@ -350,14 +340,14 @@ jobs:
           echo
           echo "Checking AArch64 Android tools..."
 
-          command -v aarch64-linux-android-as
-          command -v aarch64-linux-android-ld
-          command -v aarch64-linux-android-ar
-          command -v aarch64-linux-android-strip
+          command -v aarch64-linux-android21-clang
+          command -v llvm-ar
+          command -v llvm-strip
+          command -v ld.lld
 
           echo
-          echo "AArch64 Android assembler:"
-          aarch64-linux-android-as --version | head -n 1
+          echo "Android Clang target:"
+          aarch64-linux-android21-clang --version | head -n 1
 
 
       # ============================================================
@@ -420,15 +410,20 @@ jobs:
 
           echo
           echo "Building Booot for Android AArch64..."
+          echo "Target: aarch64-android"
+          echo "Define: BOOOT_ARM64 (scalar NNUE + ARM-safe bit operations)"
+          echo "PEXT: disabled; magic-bitboard fallback selected"
 
           "$CROSS_COMPILER" \
+            -B \
             -Tandroid \
-            -Parm64 \
+            -Mdelphi \
+            -dBOOOT_ARM64 \
             -O3 \
             -OoREGVAR \
-            -OoUNCERTAIN \
             -Fu"$TARGET_UNITS" \
             -Fu"$TARGET_UNITS/rtl" \
+            -o"$GITHUB_WORKSPACE/booot7-android-arm64" \
             booot7.dpr
 
           echo
@@ -446,44 +441,26 @@ jobs:
         run: |
           set -e
 
-          echo
-          echo "Searching for Booot executable..."
+          BOOOT_BIN="$GITHUB_WORKSPACE/booot7-android-arm64"
 
-          BOOOT_BIN=$(find . \
-            -maxdepth 3 \
-            -type f \
-            -perm -111 \
-            ! -path './.git/*' \
-            | head -n 1)
-
-          if [ -z "$BOOOT_BIN" ]; then
-            echo "ERROR: Booot executable was not produced."
+          if [ ! -f "$BOOOT_BIN" ]; then
+            echo "ERROR: Booot ARM64 executable was not produced."
+            find . -maxdepth 3 -type f -name 'booot7*' -print
             exit 1
           fi
 
-          echo
-          echo "Booot binary:"
-          echo "$BOOOT_BIN"
+          chmod +x "$BOOOT_BIN"
 
+          echo "Booot executable:"
           file "$BOOOT_BIN"
-
-          echo
-          echo "Binary size:"
           ls -lh "$BOOOT_BIN"
 
-          if ! file "$BOOOT_BIN" | grep -qi "ARM aarch64"; then
-            echo "ERROR: Binary is not AArch64."
+          if ! file "$BOOOT_BIN" | grep -qi 'ARM aarch64'; then
+            echo "ERROR: Output is not an AArch64 executable."
             exit 1
           fi
 
-          mv "$BOOOT_BIN" booot7-android-arm64
-
-          chmod +x booot7-android-arm64
-
-          echo
-          echo "Final binary:"
-          file booot7-android-arm64
-          ls -lh booot7-android-arm64
+          echo "SUCCESS: AArch64 executable format verified."
 
 
       # ============================================================
