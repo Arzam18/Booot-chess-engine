@@ -1,0 +1,62 @@
+name: Booot Android ARM64
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android-arm64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NDK_VERSION: 30.0.16248370
+      NDK_ARCHIVE: android-ndk-r30-linux.zip
+      NDK_SHA1: 5107f898313790e449e87eee2183d9a20602dee9
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Restore Android NDK cache
+        id: ndk-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/android-ndk-r30
+          key: android-ndk-r30-linux-x86_64-30.0.16248370
+
+      - name: Download and verify Android NDK r30
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/$NDK_ARCHIVE"
+          curl --fail --location --retry 3 --retry-delay 2 \
+            "https://dl.google.com/android/repository/$NDK_ARCHIVE" \
+            --output "$archive"
+          echo "$NDK_SHA1  $archive" | sha1sum --check --status
+          unzip -q "$archive" -d "$RUNNER_TEMP"
+          rm -f "$archive"
+          test -x "$RUNNER_TEMP/android-ndk-r30/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
+
+      - name: Build Android ARM64 executable
+        env:
+          ANDROID_NDK_ROOT: ${{ runner.temp }}/android-ndk-r30
+          ANDROID_API: '24'
+          OUTPUT: ${{ github.workspace }}/cpp-port/booot-uci-android-arm64
+        working-directory: cpp-port
+        run: ./build_booot_android_arm64.sh
+
+      - name: Verify Android executable
+        env:
+          READELF: ${{ runner.temp }}/android-ndk-r30/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf
+        working-directory: cpp-port
+        run: ./verify_android_arm64.sh ./booot-uci-android-arm64
+
+      - name: Publish Android ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Booot-7.4-Android-ARM64-API24
+          path: cpp-port/booot-uci-android-arm64
+          if-no-files-found: error
+          retention-days: 30
