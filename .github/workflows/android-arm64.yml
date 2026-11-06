@@ -57,6 +57,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Booot-7.4-Android-ARM64-API24
-          path: cpp-port/booot-uci-android-arm64
+          path: |
+            cpp-port/booot-uci-android-arm64
+            cpp-port/booot-uci-android-arm64.nnue-manifest.txt
           if-no-files-found: error
           retention-days: 30
