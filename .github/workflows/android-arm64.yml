@@ -1,3 +1,4 @@
+
 name: Booot Android ARM64
 
 on:
@@ -14,6 +15,7 @@ jobs:
       NDK_VERSION: 30.0.16248370
       NDK_ARCHIVE: android-ndk-r30-linux.zip
       NDK_SHA1: 5107f898313790e449e87eee2183d9a20602dee9
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -45,13 +47,13 @@ jobs:
           ANDROID_API: '24'
           OUTPUT: ${{ github.workspace }}/cpp-port/booot-uci-android-arm64
         working-directory: cpp-port
-        run: ./build_booot_android_arm64.sh
+        run: bash ./build_booot_android_arm64.sh
 
       - name: Verify Android executable
         env:
           READELF: ${{ runner.temp }}/android-ndk-r30/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf
         working-directory: cpp-port
-        run: ./verify_android_arm64.sh ./booot-uci-android-arm64
+        run: bash ./verify_android_arm64.sh ./booot-uci-android-arm64
 
       - name: Publish Android ARM64 artifact
         uses: actions/upload-artifact@v4
