@@ -1,0 +1,19 @@
+Booot 7.4 C++ Port — Stage 17 modified files and required dependency
+Extract this path-preserving archive at the repository root.
+
+The verifier is included as a required dependency, even though its contents
+were not changed in Stage 17. The prior Stage 17 overlay omitted it, which
+caused the second GitHub Actions failure.
+
+README.md
+.github/workflows/android-arm64.yml
+cpp-port/build_booot_android_arm64.sh
+cpp-port/verify_android_arm64.sh
+cpp-port/run_stage16_tests.sh
+cpp-port/ANDROID-ARM64-BUILD.md
+cpp-port/README-STAGE16.txt
+cpp-port/BOOOT-CPP-PORT.md
+cpp-port/run_stage17_tests.sh
+cpp-port/BOOOT-CPP-PORT-STAGE17.md
+cpp-port/README-STAGE17.txt
+cpp-port/Booot-CPP-Port-Stage17-CHANGELOG.txt

@@ -1,4 +1,4 @@
-# Booot 7.4 C++ Port — Cumulative Status (Stage 16)
+# Booot 7.4 C++ Port — Cumulative Status (Stage 17 — permission-robust CI fix)
 
 The original Booot Pascal project is preserved at repository root (`booot7.dpr`,
 `u*.pas`, project/resource files). The C++ port is isolated under `cpp-port/`.
@@ -35,3 +35,20 @@ The three required original NNUE models (`booot2.nn`, `booot4.nn`,
 `booot58.nn`) must be placed at repository root and passed using
 `--network-dir .`. They were absent from the recovered source archive; no
 substitutes were fabricated and no original-network parity is claimed.
+
+
+## Stage 17 — shell-script permission robustness
+
+The first Stage 17 GitHub Actions attempt stopped before compilation because
+GitHub's checked-out `build_booot_android_arm64.sh` did not have its executable
+bit set (`Permission denied`). This is a file-mode issue, not a C++ compiler
+error. Stage 17 makes execution independent of executable-bit preservation:
+
+- The workflow invokes both build and verification scripts with `bash`.
+- The Android build script invokes its nested ELF verifier with `bash` too.
+- The Stage 16 integration test invokes build scripts with `bash`.
+- Setup/build documentation uses `bash script.sh` for shell scripts.
+
+The Android NDK build is still pending. Stage 17 is not successful until the
+manual GitHub Actions run completes the compile, ELF verification, and artifact
+upload steps.

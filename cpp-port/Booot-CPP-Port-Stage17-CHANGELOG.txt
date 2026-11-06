@@ -1,0 +1,13 @@
+Booot 7.4 C++ Port — Stage 17 (corrected overlay package)
+
+- Fixed GitHub Actions Permission denied by invoking build and verifier scripts
+  explicitly through Bash; executable file modes are no longer assumed.
+- Fixed the second CI failure: the prior modified-files-only ZIP had omitted
+  cpp-port/verify_android_arm64.sh, a required companion file. The corrected
+  overlay ZIP now includes it as a required dependency.
+- Added a preflight check so a missing verifier fails before NDK compilation
+  with an actionable error instead of a late shell "No such file" error.
+- Expanded Stage 17 tests to verify the sibling dependency, the preflight
+  diagnostic, mode-0644 invocation, and Stage 16 regression behavior.
+- Android NDK cross-compilation and device runtime remain pending actual CI
+  and phone tests.

@@ -2,13 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+VERIFY_SCRIPT="$ROOT/verify_android_arm64.sh"
 API="${ANDROID_API:-24}"
 OUTPUT="${OUTPUT:-$ROOT/booot-uci-android-arm64}"
 HOST_TAG="linux-x86_64"
 
 usage() {
   cat <<USAGE
-Booot 7.4 Android ARM64 UCI build (Stage 16)
+Booot 7.4 Android ARM64 UCI build (Stage 17)
 
 Usage:
   ANDROID_NDK_ROOT=/path/to/android-ndk-r30 ./build_booot_android_arm64.sh
@@ -27,6 +28,14 @@ USAGE
 }
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then usage; exit 0; fi
+
+# Fail early with a clear message if the modified-files overlay omitted this
+# required companion script. The Android compile must not start without it.
+if [[ ! -f "$VERIFY_SCRIPT" ]]; then
+  echo "ERROR: required ELF verifier script is missing: $VERIFY_SCRIPT" >&2
+  echo "Restore cpp-port/verify_android_arm64.sh from the Stage 17 package." >&2
+  exit 1
+fi
 
 if ! [[ "$API" =~ ^[0-9]+$ ]] || (( API < 21 )); then
   echo "ERROR: ANDROID_API must be an integer >= 21 (received: $API)" >&2
@@ -103,6 +112,6 @@ printf 'Output: %s\n' "$OUTPUT"
 "$CXX" "${CXXFLAGS[@]}" "${SOURCES[@]/#/$ROOT/}" "${LDFLAGS[@]}" -o "$OUTPUT"
 chmod 755 "$OUTPUT"
 
-READELF="$READELF" "$ROOT/verify_android_arm64.sh" "$OUTPUT"
+READELF="$READELF" bash "$VERIFY_SCRIPT" "$OUTPUT"
 echo "Android ARM64 build successful: $OUTPUT"
 echo "Required runtime network files: booot2.nn, booot4.nn, booot58.nn"

@@ -8,11 +8,11 @@ port is isolated in `cpp-port/`. The active workflow is at the repository-root
 # From the repository root, on Linux after extracting the Android NDK:
 cd cpp-port
 export ANDROID_NDK_ROOT="$HOME/Android/Sdk/android-ndk-r30"
-./build_booot_android_arm64.sh
+bash ./build_booot_android_arm64.sh
 
 # Verify with the NDK's readelf:
 READELF="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" \
-  ./verify_android_arm64.sh ./booot-uci-android-arm64
+  bash ./verify_android_arm64.sh ./booot-uci-android-arm64
 ```
 
 Place the original `booot2.nn`, `booot4.nn`, and `booot58.nn` files in the
@@ -24,6 +24,9 @@ archive. Launch from the repository root:
 ```
 
 The Android workflow performs the same build and packages the single
-executable. Android system libraries remain dynamically linked; libc++ is
+executable. Keep `verify_android_arm64.sh` beside `build_booot_android_arm64.sh`;
+it is a required companion script and is included in the Stage 17 modified-only
+overlay package. All helper scripts are invoked through Bash, so executable
+file modes are not required. Android system libraries remain dynamically linked; libc++ is
 included statically in the executable. No Android NDK binary or device runtime
 result is claimed until the manual workflow and on-device tests are completed.
