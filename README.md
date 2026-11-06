@@ -17,7 +17,7 @@ Place the three original, unmodified network files in this repository root:
 - `booot4.nn`
 - `booot58.nn`
 
-They were not included in the recovered source archive, so this package does not fabricate or substitute them. The C++ executable loads them directly from the directory passed with `--network-dir`.
+They were not included in the recovered source archive, so this package does not fabricate or substitute them. The Android workflow requires all three original files and embeds their bytes verbatim into the ELF with assembler `.incbin`. It verifies that each embedded symbol has exactly the same size as the corresponding root file. The resulting Android executable does not need external `.nn` files at runtime.
 
 ## Build the host UCI executable
 
@@ -38,7 +38,7 @@ Run the repository-root GitHub Actions workflow manually:
 
 `Actions` → `Booot Android ARM64` → `Run workflow`.
 
-The workflow enters `cpp-port/`, compiles only the explicitly listed C++ sources, verifies the resulting AArch64 ELF, and uploads the executable. Pascal sources at repository root are not part of the compile command.
+The workflow enters `cpp-port/`, compiles only the explicitly listed C++ sources plus the NNUE embedding assembly, verifies the resulting AArch64 ELF and all three embedded model sizes, and uploads the executable plus a SHA-256 manifest. Pascal sources at repository root are not part of the compile command.
 
 For a local NDK build:
 
@@ -47,8 +47,8 @@ cd cpp-port
 ANDROID_NDK_ROOT=/path/to/android-ndk bash ./build_booot_android_arm64.sh
 ```
 
-After building, launch from the repository root so the three network files are easy to reference:
+After building, the self-contained Android executable can be launched from any working directory; no external network path is needed:
 
 ```bash
-./cpp-port/booot-uci-android-arm64 --network-dir . --hash 16
+./cpp-port/booot-uci-android-arm64 --hash 16
 ```
