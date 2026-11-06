@@ -50,8 +50,9 @@ std::string pv_to_uci(const std::vector<Move>& pv) {
 } // namespace
 
 UCIProtocol::UCIProtocol(SearchEngine& engine, std::istream& input,
-                         std::ostream& output)
-    : engine_(engine), input_(input), output_(output) {
+                         std::ostream& output, bool search_enabled)
+    : engine_(engine), search_enabled_(search_enabled),
+      input_(input), output_(output) {
     std::string error;
     if (!parse_fen(kStartFen, position_, error)) {
         // This constant is compiled into the engine; reaching this branch means
@@ -184,6 +185,11 @@ void UCIProtocol::handle_position(const std::string& line) {
 
 void UCIProtocol::handle_go(const std::string& line) {
     stop_and_join();
+    if (!search_enabled_) {
+        send_info_string("search disabled: original Booot 7.4 NNUE networks are not loaded");
+        send_line("bestmove 0000");
+        return;
+    }
     const auto words = split_words(line);
     SearchLimits limits;
     limits.depth = kSearchMaxPly - 1;

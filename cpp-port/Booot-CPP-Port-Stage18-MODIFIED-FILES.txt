@@ -1,0 +1,28 @@
+Booot 7.4 C++ Port — Stage 18 modified-files overlay
+
+Extract this ZIP into the repository root, preserving paths. It updates the
+Stage 17 source and adds the Stage 18 embedded-NNUE/UCI-startup files.
+It intentionally does not contain the three original NNUE assets.
+
+.github/workflows/android-arm64.yml
+README.md
+cpp-port/ANDROID-ARM64-BUILD.md
+cpp-port/booot_nnue.cpp
+cpp-port/booot_nnue.hpp
+cpp-port/booot_nnue_test.cpp
+cpp-port/booot_uci.cpp
+cpp-port/booot_uci.hpp
+cpp-port/booot_uci_main.cpp
+cpp-port/booot_uci_test.cpp
+cpp-port/build_booot_android_arm64.sh
+cpp-port/run_stage16_tests.sh
+cpp-port/run_stage17_tests.sh
+cpp-port/verify_android_arm64.sh
+cpp-port/BOOOT-CPP-PORT-STAGE18.md
+cpp-port/Booot-CPP-Port-Stage18-CHANGELOG.txt
+cpp-port/Booot-CPP-Port-Stage18-FILE-LIST.txt
+cpp-port/Booot-CPP-Port-Stage18-MODIFIED-FILES.txt
+cpp-port/README-STAGE18.txt
+cpp-port/booot_embedded_nnue_test.cpp
+cpp-port/booot_nnue_embedded.S
+cpp-port/run_stage18_tests.sh

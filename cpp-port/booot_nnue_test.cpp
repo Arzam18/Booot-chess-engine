@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,17 @@ int main() {
     std::string error;
     assert(booot::load_network(path, net, error) && error.empty());
     assert(net.model == 0 && net.model_size == 772);
+
+    std::ifstream embedded_input(path, std::ios::binary);
+    const std::vector<char> embedded_bytes(
+        (std::istreambuf_iterator<char>(embedded_input)),
+        std::istreambuf_iterator<char>());
+    booot::Network embedded_net;
+    assert(booot::load_network_from_memory(embedded_bytes.data(),
+                                          embedded_bytes.size(),
+                                          embedded_net, error));
+    assert(embedded_net.model == net.model);
+    assert(embedded_net.feature_weights == net.feature_weights);
     assert(net.feature_weights.size() == static_cast<std::size_t>(772) * 512);
 
     booot::BoardView board;

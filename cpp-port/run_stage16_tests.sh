@@ -8,7 +8,7 @@ trap 'rm -rf "$BUILD"' EXIT
 
 bash -n "$ROOT/build_booot_android_arm64.sh"
 bash -n "$ROOT/verify_android_arm64.sh"
-bash "$ROOT/build_booot_android_arm64.sh" --help | grep -q 'Android ARM64 UCI build'
+bash "$ROOT/build_booot_android_arm64.sh" --help | grep -q 'Android ARM64 self-contained UCI build'
 WORKFLOW="$ROOT/../.github/workflows/android-arm64.yml"
 grep -q 'workflow_dispatch:' "$WORKFLOW"
 grep -q 'NDK_VERSION: 30.0.16248370' "$WORKFLOW"
@@ -24,11 +24,15 @@ fi
 OUTPUT="$BUILD/booot-uci-host" CXX="$CXX" bash "$ROOT/build_booot_uci.sh"
 "$BUILD/booot-uci-host" --help | grep -q 'Expected network files'
 mkdir -p "$BUILD/empty-networks"
-if "$BUILD/booot-uci-host" --network-dir "$BUILD/empty-networks" >"$BUILD/out.txt" 2>"$BUILD/err.txt"; then
-  echo "ERROR: executable unexpectedly accepted missing NNUE networks" >&2
-  exit 1
-fi
-grep -q 'Place the original Booot 7.4 network files' "$BUILD/err.txt"
+printf 'uci\nisready\nposition startpos\ngo depth 2\nquit\n' | \
+  "$BUILD/booot-uci-host" --network-dir "$BUILD/empty-networks" \
+  >"$BUILD/out.txt" 2>"$BUILD/err.txt"
+grep -q 'id name Booot 7.4 C++ Port' "$BUILD/out.txt"
+grep -q 'uciok' "$BUILD/out.txt"
+grep -q 'readyok' "$BUILD/out.txt"
+grep -q 'search disabled: original Booot 7.4 NNUE networks are not loaded' "$BUILD/out.txt"
+grep -q 'bestmove 0000' "$BUILD/out.txt"
+grep -q 'Booot UCI will remain available' "$BUILD/err.txt"
 
 echo "Booot Stage 16 build-integration tests: PASS"
 echo "Android NDK cross-compilation itself is performed by the manual GitHub Actions workflow."

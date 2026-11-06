@@ -23,7 +23,7 @@ cp "$ROOT/build_booot_android_arm64.sh" "$WORK/build_booot_android_arm64.sh"
 cp "$ROOT/verify_android_arm64.sh" "$WORK/verify_android_arm64.sh"
 cp "$ROOT/build_booot_uci.sh" "$WORK/build_booot_uci.sh"
 chmod 0644 "$WORK"/*.sh
-bash "$WORK/build_booot_android_arm64.sh" --help | grep -q 'Android ARM64 UCI build'
+bash "$WORK/build_booot_android_arm64.sh" --help | grep -q 'Android ARM64 self-contained UCI build'
 
 # Both workflow entry points and the build script's nested verifier must use bash.
 WORKFLOW="$REPO/.github/workflows/android-arm64.yml"

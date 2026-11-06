@@ -1,0 +1,15 @@
+Booot 7.4 C++ Port — Stage 18 change log
+
+- Confirmed Stage 17 built an external-network executable; no NNUE bytes were linked.
+- Added `.incbin` embedding of the exact three original root network files.
+- Added an in-memory version-35 NNUE parser using the existing validation path.
+- Android build refuses to publish if any original model is missing or empty.
+- ELF verifier checks all three model symbols and exact source byte lengths.
+- Workflow publishes the self-contained executable and a model SHA-256 manifest.
+- UCI identity and `isready` remain available without weights in host/debug builds;
+  search is explicitly disabled rather than attempting an NNUE-less search.
+- Added tests for memory parsing, no-network UCI startup, embedded symbol sizes,
+  and an end-to-end fixture-backed host UCI search.
+
+Validation status for the delivered source archive is recorded separately; no
+original production model files are included or fabricated.

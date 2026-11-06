@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -84,6 +85,10 @@ struct NNUEUndo {
 // applied to network bytes; all integers are decoded as little-endian values.
 bool load_network(const std::filesystem::path& path, Network& out,
                   std::string& error);
+// Loads an unmodified version-35 network directly from bytes embedded in the
+// executable. `data` must remain valid for the duration of this call only.
+bool load_network_from_memory(const void* data, std::size_t size,
+                              Network& out, std::string& error);
 
 // Selects network 0/1/2 using Booot's original non-pawn, non-king material
 // thresholds. Returns -1 only if the board representation is invalid.

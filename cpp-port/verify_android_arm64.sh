@@ -33,7 +33,34 @@ if [[ "$INTERPRETER" != "/system/bin/linker64" ]]; then
   exit 1
 fi
 
-printf 'ELF verification: PASS\n'
+SYMBOLS="$($READELF -sW "$BINARY" 2>/dev/null || true)"
+for pair in \
+  'booot2_nn_start:booot2.nn' \
+  'booot4_nn_start:booot4.nn' \
+  'booot58_nn_start:booot58.nn'; do
+  symbol="${pair%%:*}"
+  model="${pair#*:}"
+  embedded_size_raw="$(awk -v wanted="$symbol" '$NF == wanted { print $3; exit }' <<<"$SYMBOLS")"
+  if [[ ! "$embedded_size_raw" =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]]; then
+    echo "ERROR: embedded model symbol is missing or has an invalid size: $symbol ($model)" >&2
+    exit 1
+  fi
+  embedded_size=$((embedded_size_raw))
+  if (( embedded_size == 0 )); then
+    echo "ERROR: embedded model symbol is empty: $symbol ($model)" >&2
+    exit 1
+  fi
+  if [[ -n "${BOOOT_NNUE_DIR:-}" ]]; then
+    expected_size="$(stat -c '%s' "$BOOOT_NNUE_DIR/$model")"
+    if (( embedded_size != expected_size )); then
+      echo "ERROR: embedded $model size mismatch: ELF=$embedded_size source=$expected_size" >&2
+      exit 1
+    fi
+  fi
+  printf '  Embedded %-12s %s bytes\n' "$model" "$embedded_size"
+done
+
+printf 'ELF verification: PASS\n' 
 printf '  Class: ELF64\n  Machine: AArch64\n  Interpreter: %s\n' "$INTERPRETER"
-printf '  PT_LOAD alignments: 16 KiB or greater\n  libc++_shared.so dependency: absent\n'
+printf '  PT_LOAD alignments: 16 KiB or greater\n  libc++_shared.so dependency: absent\n  Three original NNUE byte arrays: present\n'
 printf '  Note: Bionic system libraries remain dynamically linked, as required for Android executables.\n'

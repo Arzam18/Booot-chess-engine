@@ -16,17 +16,33 @@ READELF="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readel
 ```
 
 Place the original `booot2.nn`, `booot4.nn`, and `booot58.nn` files in the
-repository root. They are runtime assets and are not part of the recovered
-archive. Launch from the repository root:
+repository root. They were not present in the recovered original source archive.
+For a **host/debug build**, the executable loads those files from the directory
+passed with `--network-dir` (default `.`):
 
 ```bash
-./cpp-port/booot-uci-android-arm64 --network-dir . --hash 16
+cd cpp-port
+./build_booot_uci.sh
+cd ..
+./cpp-port/booot-uci --network-dir . --hash 16
 ```
 
-The Android workflow performs the same build and packages the single
-executable. Keep `verify_android_arm64.sh` beside `build_booot_android_arm64.sh`;
-it is a required companion script and is included in the Stage 17 modified-only
-overlay package. All helper scripts are invoked through Bash, so executable
-file modes are not required. Android system libraries remain dynamically linked; libc++ is
-included statically in the executable. No Android NDK binary or device runtime
-result is claimed until the manual workflow and on-device tests are completed.
+Keep `verify_android_arm64.sh` beside `build_booot_android_arm64.sh`; it is a
+required companion script. All Actions helper scripts are invoked through Bash,
+so executable file modes are not required. Android system libraries remain
+dynamically linked; libc++ is included statically in the executable.
+
+## Stage 18: self-contained Android ARM64 NNUE build
+
+The Android build requires the original, unmodified `../booot2.nn`,
+`../booot4.nn`, and `../booot58.nn` files. It embeds them into the executable
+with `.incbin`, then verifies all three ELF symbols and exact byte sizes against
+the source files. No external network files are needed on the phone. The
+workflow uploads the executable and a `.nnue-manifest.txt` sidecar with the
+SHA-256 hashes of the original model files. The executable can be launched from
+any working directory without `--network-dir`.
+
+The recovered source archive did not contain the three production networks.
+The build now fails early when any one is absent or empty; it will not publish a
+smaller, non-embedded binary. The Android NDK build and DroidFish runtime still
+require confirmation from the manual Actions run and the actual device.

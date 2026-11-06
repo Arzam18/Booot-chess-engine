@@ -17,7 +17,8 @@ namespace booot {
 // any Network objects referenced by it must outlive this protocol instance.
 class UCIProtocol {
 public:
-    UCIProtocol(SearchEngine& engine, std::istream& input, std::ostream& output);
+    UCIProtocol(SearchEngine& engine, std::istream& input, std::ostream& output,
+                bool search_enabled = true);
     ~UCIProtocol();
     UCIProtocol(const UCIProtocol&) = delete;
     UCIProtocol& operator=(const UCIProtocol&) = delete;
@@ -35,6 +36,7 @@ private:
     void send_info_string(const std::string& message);
 
     SearchEngine& engine_;
+    bool search_enabled_ = true;
     std::istream& input_;
     std::ostream& output_;
     mutable std::mutex output_mutex_;

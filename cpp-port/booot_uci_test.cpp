@@ -98,6 +98,26 @@ static void test_unsupported_go_modes_are_rejected() {
     assert(text.find("bestmove 0000") != std::string::npos);
 }
 
+static void test_uci_handshake_without_networks() {
+    SearchEngine engine(SearchEvalCallback{}, 1);
+    std::istringstream input(
+        "uci\n"
+        "isready\n"
+        "position startpos\n"
+        "go depth 2\n"
+        "quit\n");
+    std::ostringstream output;
+    UCIProtocol protocol(engine, input, output, false);
+    assert(protocol.run() == 0);
+    const std::string text = output.str();
+    assert(text.find("id name Booot 7.4 C++ Port") != std::string::npos);
+    assert(text.find("uciok") != std::string::npos);
+    assert(text.find("readyok") != std::string::npos);
+    assert(text.find("search disabled: original Booot 7.4 NNUE networks are not loaded") != std::string::npos);
+    assert(text.find("bestmove 0000") != std::string::npos);
+    assert(text.find("info depth ") == std::string::npos);
+}
+
 static void test_stop_and_go_clock_commands() {
     SearchEngine engine(simple_eval, 1);
     std::istringstream input(
@@ -121,7 +141,9 @@ int main() {
     test_fen_position_and_invalid_move_rejection();
     std::cerr << "[UCI test 3] unsupported modes\n";
     test_unsupported_go_modes_are_rejected();
-    std::cerr << "[UCI test 4] asynchronous stop\n";
+    std::cerr << "[UCI test 4] UCI handshake without NNUE\n";
+    test_uci_handshake_without_networks();
+    std::cerr << "[UCI test 5] asynchronous stop\n";
     test_stop_and_go_clock_commands();
     std::cout << "Booot Stage-15 UCI tests: PASS\n";
     return 0;

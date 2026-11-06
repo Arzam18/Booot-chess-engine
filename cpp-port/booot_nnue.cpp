@@ -8,6 +8,7 @@
 #include <fstream>
 #include <limits>
 #include <sstream>
+#include <streambuf>
 #include <type_traits>
 
 static_assert(std::endian::native == std::endian::little, "Booot NNUE files are little-endian");
@@ -299,14 +300,17 @@ bad_castle:
 
 } // namespace
 
-bool load_network(const std::filesystem::path& path, Network& out,
-                  std::string& error) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
-        error = "Cannot open neural network: " + path.string();
-        return false;
-    }
+namespace {
 
+class EmbeddedMemoryBuffer final : public std::streambuf {
+public:
+    EmbeddedMemoryBuffer(const void* data, std::size_t size) {
+        char* begin = const_cast<char*>(static_cast<const char*>(data));
+        setg(begin, begin, begin + size);
+    }
+};
+
+bool load_network_stream(std::istream& in, Network& out, std::string& error) {
     bool ok = true;
     Network net{};
     const int16_t version = static_cast<int16_t>(read_u16(in, ok));
@@ -391,6 +395,29 @@ bool load_network(const std::filesystem::path& path, Network& out,
     out = std::move(net);
     error.clear();
     return true;
+}
+
+} // namespace
+
+bool load_network(const std::filesystem::path& path, Network& out,
+                  std::string& error) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        error = "Cannot open neural network: " + path.string();
+        return false;
+    }
+    return load_network_stream(in, out, error);
+}
+
+bool load_network_from_memory(const void* data, std::size_t size,
+                              Network& out, std::string& error) {
+    if (data == nullptr || size == 0) {
+        error = "Embedded neural network is empty";
+        return false;
+    }
+    EmbeddedMemoryBuffer buffer(data, size);
+    std::istream in(&buffer);
+    return load_network_stream(in, out, error);
 }
 
 int choose_network(const BoardView& board) {
