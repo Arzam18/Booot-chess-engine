@@ -1,11 +1,33 @@
-Booot 7.4 C++ Port — Stage 20 modified/new paths (relative to repository root)
+Booot 7.4 C++ Port — Stage 20.1 compile-fix overlay paths (relative to repository root)
+
+This overlay includes the Stage 19 compact-undo compatibility set plus Stage 20 search corrections.
+It is safe to extract over the repository root; paths are preserved.
 
 README.md
+cpp-port/booot_board.hpp
+cpp-port/booot_board.cpp
+cpp-port/booot_nnue.hpp
+cpp-port/booot_nnue.cpp
+cpp-port/booot_nnue_move.cpp
+cpp-port/booot_nnue_test.cpp
+cpp-port/booot_nnue_update_test.cpp
+cpp-port/booot_move_order.hpp
+cpp-port/booot_move_order.cpp
 cpp-port/booot_search.cpp
 cpp-port/booot_search.hpp
-cpp-port/BOOOT-CPP-PORT-STAGE20.md (new)
-cpp-port/README-STAGE20.txt (new)
-cpp-port/Booot-CPP-Port-Stage20-CHANGELOG.txt (new)
-cpp-port/Booot-CPP-Port-Stage20-MODIFIED-FILES.txt (new)
-cpp-port/Booot-CPP-Port-Stage20-FILE-LIST.txt (new)
-cpp-port/Booot-CPP-Port-Stage20-Archive-SHA256SUMS.txt (new)
+cpp-port/booot_uci.cpp
+cpp-port/build_booot_android_arm64.sh
+cpp-port/verify_android_arm64.sh
+cpp-port/run_stage17_tests.sh
+cpp-port/booot_stage19_performance_test.cpp
+cpp-port/run_stage19_tests.sh
+cpp-port/BOOOT-CPP-PORT-STAGE19.md
+cpp-port/README-STAGE19.txt
+cpp-port/Booot-CPP-Port-Stage19-CHANGELOG.txt
+cpp-port/Booot-CPP-Port-Stage19-MODIFIED-FILES.txt
+cpp-port/Booot-CPP-Port-Stage19-FILE-LIST.txt
+cpp-port/BOOOT-CPP-PORT-STAGE20.md
+cpp-port/README-STAGE20.txt
+cpp-port/Booot-CPP-Port-Stage20-CHANGELOG.txt
+cpp-port/Booot-CPP-Port-Stage20-MODIFIED-FILES.txt
+cpp-port/Booot-CPP-Port-Stage20-FILE-LIST.txt

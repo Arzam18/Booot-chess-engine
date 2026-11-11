@@ -73,7 +73,8 @@ void move_piece(Position& p, Square from, Square to) {
     add_piece(p, to, piece);
 }
 
-void append_promotions(std::vector<Move>& moves, Square from, Square to, bool capture) {
+template <typename MoveContainer>
+void append_promotions(MoveContainer& moves, Square from, Square to, bool capture) {
     // Pascal order in AddPawnPseudoPromos: Q, N, R, B.
     moves.push_back(encode_move(from, to, capture, Queen));
     moves.push_back(encode_move(from, to, capture, Knight));
@@ -126,7 +127,7 @@ int non_pawn_material_value(Piece type) noexcept {
     }
 }
 
-void update_hashes_after_move(Position& p, const Position& old,
+void update_hashes_after_move(Position& p, const Undo& old,
                               Color side, Piece moving_type, Piece placed_type,
                               Square from, Square to, int captured,
                               Square capture_square, bool is_promotion,
@@ -355,7 +356,8 @@ bool in_check(const Position& p, Color color) {
     return king != kNoSquare && square_attacked(p, king, static_cast<Color>(color ^ 1));
 }
 
-void generate_pseudo_legal_moves(const Position& p, std::vector<Move>& moves) {
+template <typename MoveContainer>
+void generate_pseudo_legal_moves_impl(const Position& p, MoveContainer& moves) {
     moves.clear();
     moves.reserve(128);
     const Color side = static_cast<Color>(p.side_to_move);
@@ -410,6 +412,14 @@ void generate_pseudo_legal_moves(const Position& p, std::vector<Move>& moves) {
     }
 }
 
+void generate_pseudo_legal_moves(const Position& p, std::vector<Move>& moves) {
+    generate_pseudo_legal_moves_impl(p, moves);
+}
+
+void generate_pseudo_legal_moves(const Position& p, MoveList& moves) {
+    generate_pseudo_legal_moves_impl(p, moves);
+}
+
 bool make_move(Position& p, Move move, Undo& undo, std::string* error) {
     const Square from = move_from(move);
     const Square to = move_to(move);
@@ -438,7 +448,6 @@ bool make_move(Position& p, Move move, Undo& undo, std::string* error) {
         return fail("pawn reaching last rank must promote");
     }
 
-    undo.previous = p;
     const Color side = static_cast<Color>(p.side_to_move);
     const bool castle = moving_type == King && (to - from == 2 || from - to == 2);
     Square rook_from = kNoSquare;
@@ -446,8 +455,36 @@ bool make_move(Position& p, Move move, Undo& undo, std::string* error) {
     if (castle) {
         if (to > from) { rook_from = from + 3; rook_to = from + 1; }
         else { rook_from = from - 4; rook_to = from - 1; }
+        // Validate before mutating the board, so a rejected castle needs no
+        // full-position rollback snapshot.
+        if (rook_from < 0 || rook_from >= 64 ||
+            p.board[rook_from] != signed_piece(side, Rook))
+            return fail("castling move has no rook on its original square");
     }
     const Piece placed_type = move_is_promotion(move) ? move_promotion(move) : moving_type;
+
+    undo.from_square = from;
+    undo.to_square = to;
+    undo.moving_piece = moving;
+    undo.captured_piece = captured;
+    undo.capture_square = captured ? capture_square : kNoSquare;
+    undo.placed_type = placed_type;
+    undo.side_to_move = p.side_to_move;
+    undo.en_passant = p.en_passant;
+    undo.castling_rights = p.castling_rights;
+    undo.halfmove_clock = p.halfmove_clock;
+    undo.fullmove_number = p.fullmove_number;
+    undo.last_captured_piece = p.last_captured_piece;
+    undo.null_count = p.null_count;
+    undo.king_square = p.king_square;
+    undo.key = p.key;
+    undo.pawn_key = p.pawn_key;
+    undo.non_pawn_key = p.non_pawn_key;
+    undo.non_pawn_material = p.non_pawn_material;
+    undo.is_castle = castle;
+    undo.rook_from = rook_from;
+    undo.rook_to = rook_to;
+
     p.en_passant = kNoSquare;
     update_castling_rights(p, from, to);
 
@@ -455,13 +492,7 @@ bool make_move(Position& p, Move move, Undo& undo, std::string* error) {
     remove_piece(p, from);
     add_piece(p, to, signed_piece(side, placed_type));
 
-    if (castle) {
-        if (p.board[rook_from] != signed_piece(side, Rook)) {
-            p = undo.previous;
-            return fail("castling move has no rook on its original square");
-        }
-        move_piece(p, rook_from, rook_to);
-    }
+    if (castle) move_piece(p, rook_from, rook_to);
 
     if (is_pawn && !move_is_promotion(move) && (to - from == 16 || from - to == 16))
         p.en_passant = from + (side == White ? 8 : -8);
@@ -469,21 +500,63 @@ bool make_move(Position& p, Move move, Undo& undo, std::string* error) {
     p.halfmove_clock = (is_pawn || captured || is_ep) ? 0 : p.halfmove_clock + 1;
     if (side == Black) ++p.fullmove_number;
     p.last_captured_piece = captured ? captured : (is_ep ? signed_piece(static_cast<Color>(side ^ 1), Pawn) : Empty);
-    p.null_count = undo.previous.null_count + 1;
+    p.null_count = undo.null_count + 1;
     p.side_to_move ^= 1;
-    update_hashes_after_move(p, undo.previous, side, moving_type, placed_type,
+    update_hashes_after_move(p, undo, side, moving_type, placed_type,
                              from, to, captured, capture_square,
                              move_is_promotion(move), castle, rook_from, rook_to);
     if (error) error->clear();
     return true;
 }
 
+namespace {
+void save_undo_metadata(const Position& p, Undo& undo) noexcept {
+    undo.side_to_move = p.side_to_move;
+    undo.en_passant = p.en_passant;
+    undo.castling_rights = p.castling_rights;
+    undo.halfmove_clock = p.halfmove_clock;
+    undo.fullmove_number = p.fullmove_number;
+    undo.last_captured_piece = p.last_captured_piece;
+    undo.null_count = p.null_count;
+    undo.king_square = p.king_square;
+    undo.key = p.key;
+    undo.pawn_key = p.pawn_key;
+    undo.non_pawn_key = p.non_pawn_key;
+    undo.non_pawn_material = p.non_pawn_material;
+}
+
+void restore_undo_metadata(Position& p, const Undo& undo) noexcept {
+    p.side_to_move = undo.side_to_move;
+    p.en_passant = undo.en_passant;
+    p.castling_rights = undo.castling_rights;
+    p.halfmove_clock = undo.halfmove_clock;
+    p.fullmove_number = undo.fullmove_number;
+    p.last_captured_piece = undo.last_captured_piece;
+    p.null_count = undo.null_count;
+    p.king_square = undo.king_square;
+    p.key = undo.key;
+    p.pawn_key = undo.pawn_key;
+    p.non_pawn_key = undo.non_pawn_key;
+    p.non_pawn_material = undo.non_pawn_material;
+}
+} // namespace
+
 void unmake_move(Position& p, const Undo& undo) noexcept {
-    p = undo.previous;
+    // Undo stores the compact piece deltas and their squares, so restoration
+    // touches only the moved/captured pieces rather than assigning a full board.
+    remove_piece(p, undo.to_square);
+    if (undo.is_castle) {
+        remove_piece(p, undo.rook_to);
+        add_piece(p, undo.rook_from, signed_piece(static_cast<Color>(undo.side_to_move), Rook));
+    }
+    add_piece(p, undo.from_square, undo.moving_piece);
+    if (undo.captured_piece != Empty && undo.capture_square != kNoSquare)
+        add_piece(p, undo.capture_square, undo.captured_piece);
+    restore_undo_metadata(p, undo);
 }
 
 void make_null_move(Position& p, Undo& undo) noexcept {
-    undo.previous = p;
+    save_undo_metadata(p, undo);
     if (p.en_passant != kNoSquare) {
         p.key ^= zobrist_en_passant(p.en_passant);
         p.en_passant = kNoSquare;
@@ -495,11 +568,12 @@ void make_null_move(Position& p, Undo& undo) noexcept {
 }
 
 void unmake_null_move(Position& p, const Undo& undo) noexcept {
-    p = undo.previous;
+    restore_undo_metadata(p, undo);
 }
 
-void generate_legal_moves(const Position& p, std::vector<Move>& moves) {
-    std::vector<Move> pseudo;
+template <typename MoveContainer>
+void generate_legal_moves_impl(const Position& p, MoveContainer& moves) {
+    MoveList pseudo;
     generate_pseudo_legal_moves(p, pseudo);
     moves.clear();
     moves.reserve(pseudo.size());
@@ -510,6 +584,14 @@ void generate_legal_moves(const Position& p, std::vector<Move>& moves) {
         const Color mover = static_cast<Color>(p.side_to_move);
         if (!in_check(child, mover)) moves.push_back(move);
     }
+}
+
+void generate_legal_moves(const Position& p, std::vector<Move>& moves) {
+    generate_legal_moves_impl(p, moves);
+}
+
+void generate_legal_moves(const Position& p, MoveList& moves) {
+    generate_legal_moves_impl(p, moves);
 }
 
 bool parse_uci_move(const Position& p, const std::string& uci,

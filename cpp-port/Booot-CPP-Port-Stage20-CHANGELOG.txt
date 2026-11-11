@@ -22,3 +22,14 @@ Verification:
 - GCC ASan/UBSan Stage 1–8 plus additional search and UCI sanitizer tests: PASS.
 - Android NDK production build and Galaxy A16 playing-strength test: NOT RUN.
   The Stage 19 source archive lacks the three original production networks.
+
+
+Stage 20.1 Android compile-error hardening:
+- Search records the moving piece and parent-position key directly from the
+  parent Position before make_child(), no longer reading Undo::moving_piece or
+  Undo::key at search call sites.
+- booot_search.hpp directly includes booot_board.hpp for the Position/Undo API.
+- The Stage 20 modified-files overlay now includes the Stage 19 compact-undo
+  board and NNUE compatibility set to prevent mixed-stage headers/sources.
+- GCC full Stage 1-15/perft, Clang quick Stage 1-15, and GCC search/UCI
+  ASan/UBSan checks pass. Android NDK build remains unverified locally.

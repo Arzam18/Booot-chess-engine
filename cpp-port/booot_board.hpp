@@ -35,6 +35,28 @@ constexpr Piece move_promotion(Move move) noexcept {
 constexpr bool move_is_capture(Move move) noexcept { return (move & kCaptureFlag) != 0; }
 constexpr bool move_is_promotion(Move move) noexcept { return (move & kPromotionMask) != 0; }
 
+// Fixed-capacity move buffer matching the original engine's MaxMoves=256.
+// Search hot paths use this to avoid one heap allocation per generated list.
+struct MoveList {
+    static constexpr std::size_t kCapacity = 256;
+    std::array<Move, kCapacity> data{};
+    std::size_t count = 0;
+
+    void clear() noexcept { count = 0; }
+    void reserve(std::size_t) noexcept {}
+    void push_back(Move move) noexcept {
+        if (count < kCapacity) data[count++] = move;
+    }
+    std::size_t size() const noexcept { return count; }
+    bool empty() const noexcept { return count == 0; }
+    Move& operator[](std::size_t index) noexcept { return data[index]; }
+    const Move& operator[](std::size_t index) const noexcept { return data[index]; }
+    Move* begin() noexcept { return data.data(); }
+    Move* end() noexcept { return data.data() + count; }
+    const Move* begin() const noexcept { return data.data(); }
+    const Move* end() const noexcept { return data.data() + count; }
+};
+
 struct Position {
     // Signed mailbox matches TBoard.Pos: white pieces positive, black negative.
     std::array<std::int8_t, 64> board{};
@@ -57,11 +79,31 @@ struct Position {
     int null_count = 0;
 };
 
-// Snapshot undo is intentionally a correctness/reference implementation.
-// Later search integration can replace it with the compact original TUndo data
-// plus incremental Zobrist and NNUE updates after those subsystems are ported.
+// Compact reversible move state. The original Pascal engine stores only the
+// metadata and captured/moving pieces needed to reverse a move; copying the
+// entire Position at every search node was a major avoidable cost.
 struct Undo {
-    Position previous{};
+    Square from_square = kNoSquare;
+    Square to_square = kNoSquare;
+    int moving_piece = Empty;
+    int captured_piece = Empty;
+    Square capture_square = kNoSquare;
+    Piece placed_type = Empty;
+    int side_to_move = White;
+    Square en_passant = kNoSquare;
+    std::uint8_t castling_rights = 0;
+    int halfmove_clock = 0;
+    int fullmove_number = 1;
+    int last_captured_piece = Empty;
+    int null_count = 0;
+    std::array<Square, 2> king_square{{kNoSquare, kNoSquare}};
+    std::uint64_t key = 0;
+    std::uint64_t pawn_key = 0;
+    std::array<std::uint64_t, 2> non_pawn_key{};
+    std::array<int, 2> non_pawn_material{};
+    bool is_castle = false;
+    Square rook_from = kNoSquare;
+    Square rook_to = kNoSquare;
 };
 
 struct PerftResult {
@@ -80,7 +122,9 @@ bool square_attacked(const Position& position, Square square, Color by_color);
 bool in_check(const Position& position, Color color);
 
 void generate_pseudo_legal_moves(const Position& position, std::vector<Move>& moves);
+void generate_pseudo_legal_moves(const Position& position, MoveList& moves);
 void generate_legal_moves(const Position& position, std::vector<Move>& moves);
+void generate_legal_moves(const Position& position, MoveList& moves);
 bool make_move(Position& position, Move move, Undo& undo, std::string* error = nullptr);
 void unmake_move(Position& position, const Undo& undo) noexcept;
 void make_null_move(Position& position, Undo& undo) noexcept;

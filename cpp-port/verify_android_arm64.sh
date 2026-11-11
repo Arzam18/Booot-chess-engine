@@ -33,6 +33,18 @@ if [[ "$INTERPRETER" != "/system/bin/linker64" ]]; then
   exit 1
 fi
 
+if [[ -n "${OBJDUMP:-}" ]]; then
+  command -v "$OBJDUMP" >/dev/null 2>&1 || { echo "ERROR: llvm-objdump not found: $OBJDUMP" >&2; exit 1; }
+  DISASSEMBLY="$("$OBJDUMP" -d "$BINARY")"
+  if ! grep -Eiq '[[:space:]]sdot[[:space:]]' <<<"$DISASSEMBLY"; then
+    echo "ERROR: AArch64 runtime-dispatched SDOT kernel is missing from the executable" >&2
+    exit 1
+  fi
+  echo '  Runtime-dispatched SDOT kernel: present (HWCAP_ASIMDDP guarded)'
+else
+  echo '  Runtime-dispatched SDOT kernel: disassembly not checked (OBJDUMP not supplied)'
+fi
+
 SYMBOLS="$($READELF -sW "$BINARY" 2>/dev/null || true)"
 for pair in \
   'booot2_nn_start:booot2.nn' \

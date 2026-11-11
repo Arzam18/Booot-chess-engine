@@ -22,7 +22,8 @@ Environment:
 
 Target:
   aarch64-linux-android${API}
-  ARMv8-A + mandatory AArch64 NEON; no dot-product-only instructions
+  ARMv8-A + mandatory AArch64 NEON baseline; optional SDOT is runtime-dispatched
+  only when Android reports HWCAP_ASIMDDP, with a safe NEON fallback
   The exact original booot2.nn, booot4.nn, and booot58.nn files are embedded
   from the repository root using assembler .incbin; no runtime model files are needed.
   libc++ is linked statically; Android system libraries remain dynamic
@@ -84,8 +85,10 @@ fi
 TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 CXX="$TOOLCHAIN/aarch64-linux-android${API}-clang++"
 READELF="$TOOLCHAIN/llvm-readelf"
+OBJDUMP="$TOOLCHAIN/llvm-objdump"
 if [[ ! -x "$CXX" ]]; then echo "ERROR: Android compiler missing: $CXX" >&2; exit 1; fi
 if [[ ! -x "$READELF" ]]; then echo "ERROR: llvm-readelf missing: $READELF" >&2; exit 1; fi
+if [[ ! -x "$OBJDUMP" ]]; then echo "ERROR: llvm-objdump missing: $OBJDUMP" >&2; exit 1; fi
 
 SOURCES=(
   booot_nnue.cpp booot_nnue_move.cpp booot_bitboard.cpp booot_attacks.cpp
@@ -120,7 +123,7 @@ printf 'Booot 7.4 Android ARM64 build\n'
 printf 'NDK: %s\n' "$NDK_ROOT"
 printf 'Compiler: %s\n' "$CXX"
 "$CXX" --version | head -n 1
-printf 'API: %s\nArchitecture: armv8-a+simd (AArch64 NEON baseline)\n' "$API"
+printf 'API: %s\nArchitecture: armv8-a+simd baseline + optional runtime SDOT dispatch\n' "$API"
 printf 'Output: %s\n' "$OUTPUT"
 printf 'Original NNUE SHA-256 values (embedded verbatim):\n'
 sha256sum "${NNUE_FILES[@]/#/$REPO_ROOT/}"
@@ -133,7 +136,7 @@ cd "$ROOT"
 "$CXX" "${CXXFLAGS[@]}" "${SOURCES[@]/#/$ROOT/}" "${LDFLAGS[@]}" -o "$OUTPUT"
 chmod 755 "$OUTPUT"
 
-BOOOT_NNUE_DIR="$REPO_ROOT" READELF="$READELF" bash "$VERIFY_SCRIPT" "$OUTPUT"
+BOOOT_NNUE_DIR="$REPO_ROOT" READELF="$READELF" OBJDUMP="$OBJDUMP" bash "$VERIFY_SCRIPT" "$OUTPUT"
 MANIFEST="$OUTPUT.nnue-manifest.txt"
 {
   echo 'Booot 7.4 Android ARM64 — embedded NNUE manifest'

@@ -12,3 +12,13 @@ ASan/UBSan PASS. Android NDK and Galaxy A16 testing not yet performed. The Nov
 6 Stage 19 archive lacks the three original production networks.
 
 See BTHOOK? No. See BOOOT-CPP-PORT-STAGE20.md for full details.
+
+
+Stage 20.1 compile-error hardening: search now snapshots the moving piece and
+parent hash directly from the parent Position before making a move. Search
+header explicitly includes booot_board.hpp. The modified-only overlay includes
+Stage 19 compact-undo compatibility files to avoid mixed-stage APIs.
+
+Additional validation: GCC full perft + Stage 1-15 tests PASS; Clang quick
+Stage 1-15 tests PASS; GCC ASan/UBSan search + UCI PASS. Android NDK build is
+not run locally because no NDK is installed here.

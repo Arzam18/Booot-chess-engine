@@ -114,6 +114,23 @@ void test_every_legal_move(const char* fen, const booot::NetworkSet& networks,
         assert(booot::update_nnue_state(before, after, networks, state, nnue_undo, error));
         assert_increment_matches_rebuild(after, networks, state);
 
+        // Exercise the optimized search-path updater using compact board Undo:
+        // this must match the generic before/after reference path for every
+        // legal move, including castle, en-passant, promotion and king moves.
+        booot::Position fast_after = before;
+        booot::NNUEState fast_state = base;
+        booot::Undo fast_board_undo;
+        booot::NNUEUndo fast_nnue_undo;
+        assert(booot::make_move_with_nnue(fast_after, move, networks, fast_state,
+                                         fast_board_undo, fast_nnue_undo, error));
+        assert(booot::to_fen(fast_after) == booot::to_fen(after));
+        assert(same_state(fast_state, state));
+        assert_increment_matches_rebuild(fast_after, networks, fast_state);
+        booot::unmake_move_with_nnue(fast_after, fast_board_undo, fast_state,
+                                     fast_nnue_undo);
+        assert(booot::to_fen(fast_after) == booot::to_fen(before));
+        assert(same_state(fast_state, base));
+
         int32_t incremental_score = 0;
         assert(booot::evaluate_nnue_state(after, networks, state, incremental_score, error));
         booot::NNUEState full_state;
@@ -141,13 +158,12 @@ void test_null_move(const booot::NetworkSet& networks) {
     const booot::NNUEState original = state;
     booot::Position after = before;
     booot::Undo board_undo;
-    booot::make_null_move(after, board_undo);
     booot::NNUEUndo nnue_undo;
-    assert(booot::update_nnue_state(before, after, networks, state, nnue_undo, error));
+    assert(booot::make_null_move_with_nnue(after, networks, state,
+                                           board_undo, nnue_undo, error));
     assert(same_accumulator(state.accumulator, original.accumulator));
     assert_increment_matches_rebuild(after, networks, state);
-    booot::unmake_nnue_state(state, nnue_undo);
-    booot::unmake_null_move(after, board_undo);
+    booot::unmake_null_move_with_nnue(after, board_undo, state, nnue_undo);
     assert(same_state(state, original));
     assert(booot::to_fen(after) == booot::to_fen(before));
 }
@@ -164,21 +180,19 @@ void test_network_switch(const booot::NetworkSet& networks) {
     std::string error;
     assert(booot::parse_uci_move(before, "d1d8", move, error));
     booot::Position after = before;
-    booot::Undo board_undo;
-    assert(booot::make_move(after, move, board_undo, &error));
-    assert(booot::choose_network(booot::BoardView{
-        .piece = after.board, .king_square = after.king_square,
-        .castle_rights = after.castling_rights}) == 1);
-
     booot::NNUEState state;
     assert(booot::refresh_nnue_state(before, networks, state, error));
     assert(state.network_slot == 2);
+    booot::Undo board_undo;
     booot::NNUEUndo nnue_undo;
-    assert(booot::update_nnue_state(before, after, networks, state, nnue_undo, error));
+    assert(booot::make_move_with_nnue(after, move, networks, state,
+                                     board_undo, nnue_undo, error));
+    assert(booot::choose_network(booot::BoardView{
+        .piece = after.board, .king_square = after.king_square,
+        .castle_rights = after.castling_rights}) == 1);
     assert(state.network_slot == 1);
     assert_increment_matches_rebuild(after, networks, state);
-    booot::unmake_nnue_state(state, nnue_undo);
-    booot::unmake_move(after, board_undo);
+    booot::unmake_move_with_nnue(after, board_undo, state, nnue_undo);
     assert(state.network_slot == 2);
 }
 

@@ -83,3 +83,29 @@ the Galaxy A16 with one thread, fixed hash, the same time control and opening
 book, and comparable thermal conditions. Record depth, nodes, time, NPS, and
 match score separately. Do not interpret depth or NPS alone as a strength
 measurement.
+
+
+## Stage 20.1 Android compile-error hardening
+
+A GitHub Actions ARM64 build reported missing `Undo::moving_piece` and
+`Undo::key` members at search call sites. The search code no longer relies on
+those fields: it records the moving piece and parent hash from `Position`
+before `make_child()` mutates the board. This is semantically equivalent for
+history indexing and repetition-path tracking and keeps those search concerns
+independent from the board's internal undo representation. `booot_search.hpp`
+also includes `booot_board.hpp` directly because its declarations use `Position`
+and `Undo`.
+
+The modified-files-only overlay now carries the Stage 19 compact-undo board and
+NNUE compatibility files as well as the Stage 20 search changes. This prevents
+a Stage 20 search source from being applied to a repository still using an
+older board/undo API.
+
+Additional validation after this correction:
+- GCC full Stage 1–15 suite, including complete perft vectors: PASS.
+- Clang quick Stage 1–15 suite: PASS.
+- GCC/Clang Stage 19 compact-undo and SDOT code-generation checks: PASS.
+- GCC ASan/UBSan search and UCI test binaries: PASS.
+- Android NDK GitHub Actions build: NOT RUN locally (NDK is not installed in
+  this environment); the exact CI workflow must be rerun after applying the
+  overlay. Production network files are still required by that workflow.

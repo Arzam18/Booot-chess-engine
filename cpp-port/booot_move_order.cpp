@@ -229,6 +229,23 @@ int MoveHistory::stat_bonus(int depth) noexcept {
     return std::clamp((9 * d + 270) * d - 310, 0, 2150);
 }
 
+void MovePicker::add_scored(Move move, int score, std::uint8_t phase) noexcept {
+    if (scored_count_ >= scored_.size()) return;
+    const std::uint16_t packed = static_cast<std::uint16_t>(
+        ((phase & 0x3U) << 14U) | (insertion_order_++ & 0x3FFFU));
+    scored_[scored_count_++] = {score, move, packed};
+}
+
+std::optional<Move> MovePicker::take_phase(std::uint8_t phase) noexcept {
+    while (phase_cursor_ < scored_count_ &&
+           (scored_[phase_cursor_].order_phase >> 14U) < phase)
+        ++phase_cursor_;
+    if (phase_cursor_ >= scored_count_ ||
+        (scored_[phase_cursor_].order_phase >> 14U) != phase)
+        return std::nullopt;
+    return scored_[phase_cursor_++].move;
+}
+
 MovePicker::MovePicker(const Position& position, const MoveHistory& history,
                        int ply, const MoveHistoryContext& context,
                        Move hash_move, Move killer1, Move killer2,
@@ -237,50 +254,48 @@ MovePicker::MovePicker(const Position& position, const MoveHistory& history,
       hash_move_(hash_move), killer1_(killer1), killer2_(killer2),
       counter_move_(counter_move), skip_quiets_(skip_quiets),
       in_check_(in_check(position, static_cast<Color>(position.side_to_move))) {
-    std::vector<Move> pseudo;
-    generate_pseudo_legal_moves(position_, pseudo);
-
     if (in_check_) {
-        std::vector<Move> legal;
+        MoveList legal;
         generate_legal_moves(position_, legal);
         for (Move move : legal) {
-            int score = 0;
-            if (move_is_capture(move)) score = kCapturePriority + kMvv[captured_type(position_, move)];
-            else score = history_.escape_score(position_, move, ply_, context_);
-            evasions_.push_back({move, score});
+            const int score = move_is_capture(move)
+                ? kCapturePriority + kMvv[static_cast<std::size_t>(captured_type(position_, move))]
+                : history_.escape_score(position_, move, ply_, context_);
+            add_scored(move, score, 0);
         }
-        std::stable_sort(evasions_.begin(), evasions_.end(),
-            [](const ScoredMove& a, const ScoredMove& b) { return a.score > b.score; });
-        return;
-    }
-
-    const ThreatMasks threats = build_enemy_threats(position_);
-    for (Move move : pseudo) {
-        if (is_capture_or_promotion(move)) {
-            const int score = history_.capture_score(position_, move);
-            const bool good = good_see(move, position_, 0);
-            (good ? good_captures_ : bad_captures_).push_back({move, score});
-        } else {
-            const int score = history_.quiet_score(position_, move, ply_, context_) +
-                              quiet_threat_adjustment(position_, move, threats);
-            quiets_.push_back({move, score});
+    } else {
+        MoveList pseudo;
+        generate_pseudo_legal_moves(position_, pseudo);
+        const ThreatMasks threats = build_enemy_threats(position_);
+        for (Move move : pseudo) {
+            if (is_capture_or_promotion(move)) {
+                const int score = history_.capture_score(position_, move);
+                add_scored(move, score, good_see(move, position_, 0) ? 0 : 2);
+            } else {
+                const int score = history_.quiet_score(position_, move, ply_, context_) +
+                                  quiet_threat_adjustment(position_, move, threats);
+                add_scored(move, score, 1);
+            }
         }
     }
-    auto descending = [](const ScoredMove& a, const ScoredMove& b) {
-        return a.score > b.score;
-    };
-    std::stable_sort(good_captures_.begin(), good_captures_.end(), descending);
-    std::stable_sort(quiets_.begin(), quiets_.end(), descending);
-    std::stable_sort(bad_captures_.begin(), bad_captures_.end(), descending);
-    // uSort stores losing captures from the front toward the end of MoveList,
-    // then drains that tail backwards in TryBadCaptures.
-    std::reverse(bad_captures_.begin(), bad_captures_.end());
-}
 
-std::optional<Move> MovePicker::take_best(std::vector<ScoredMove>& moves,
-                                          std::size_t& cursor) {
-    if (cursor >= moves.size()) return std::nullopt;
-    return moves[cursor++].move;
+    // Pascal uSort keeps stable order within the winning-capture and quiet
+    // groups, but reverses the losing-capture tail while draining it. Encode
+    // those tie rules in the comparator so no temporary vectors are needed.
+    std::sort(scored_.begin(), scored_.begin() + static_cast<std::ptrdiff_t>(scored_count_),
+        [](const ScoredMove& a, const ScoredMove& b) {
+            const unsigned a_phase = a.order_phase >> 14U;
+            const unsigned b_phase = b.order_phase >> 14U;
+            if (a_phase != b_phase) return a_phase < b_phase;
+            if (a.score != b.score) {
+                if (a_phase == 2) return a.score < b.score;
+                return a.score > b.score;
+            }
+            const unsigned a_order = a.order_phase & 0x3FFFU;
+            const unsigned b_order = b.order_phase & 0x3FFFU;
+            if (a_phase == 2) return a_order > b_order;
+            return a_order < b_order;
+        });
 }
 
 bool MovePicker::is_duplicate_special(Move move) const noexcept {
@@ -299,7 +314,7 @@ std::optional<Move> MovePicker::next() {
     }
 
     if (in_check_) {
-        while (auto move = take_best(evasions_, evasion_cursor_)) {
+        while (auto move = take_phase(0)) {
             if (*move != hash_move_) return move;
         }
         return std::nullopt;
@@ -307,7 +322,7 @@ std::optional<Move> MovePicker::next() {
 
     for (;;) {
         if (phase_ == 1) {
-            while (auto move = take_best(good_captures_, good_cursor_))
+            while (auto move = take_phase(0))
                 if (*move != hash_move_) return move;
             phase_ = 2;
         } else if (phase_ == 2) {
@@ -340,13 +355,13 @@ std::optional<Move> MovePicker::next() {
             }
         } else if (phase_ == 5) {
             if (!skip_quiets_) {
-                while (auto move = take_best(quiets_, quiet_cursor_))
+                while (auto move = take_phase(1))
                     if (!is_duplicate_special(*move)) return move;
             }
             phase_ = 6;
         } else if (phase_ == 6) {
             phase_ = 7;
-            while (auto move = take_best(bad_captures_, bad_cursor_))
+            while (auto move = take_phase(2))
                 if (*move != hash_move_) return move;
         } else {
             return std::nullopt;

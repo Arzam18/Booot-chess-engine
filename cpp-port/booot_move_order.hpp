@@ -91,9 +91,15 @@ public:
     std::optional<Move> next();
 
 private:
-    struct ScoredMove { Move move = 0; int score = 0; };
-    static std::optional<Move> take_best(std::vector<ScoredMove>& moves,
-                                         std::size_t& cursor);
+    struct ScoredMove {
+        int score = 0;
+        Move move = 0;
+        // Pack the 2-bit phase above a 14-bit stable insertion order. This
+        // keeps each entry 8 bytes and limits recursive search stack use.
+        std::uint16_t order_phase = 0;
+    };
+    void add_scored(Move move, int score, std::uint8_t phase) noexcept;
+    std::optional<Move> take_phase(std::uint8_t phase) noexcept;
     bool is_duplicate_special(Move move) const noexcept;
 
     const Position& position_;
@@ -111,14 +117,12 @@ private:
     bool killer1_pending_ = true;
     bool killer2_pending_ = true;
     bool counter_pending_ = true;
-    std::vector<ScoredMove> good_captures_;
-    std::vector<ScoredMove> quiets_;
-    std::vector<ScoredMove> bad_captures_;
-    std::vector<ScoredMove> evasions_;
-    std::size_t good_cursor_ = 0;
-    std::size_t quiet_cursor_ = 0;
-    std::size_t bad_cursor_ = 0;
-    std::size_t evasion_cursor_ = 0;
+    // One fixed 256-entry pool is partitioned by phase and sorted in-place.
+    // This replaces four per-node vectors and their heap allocations.
+    std::array<ScoredMove, MoveList::kCapacity> scored_{};
+    std::size_t scored_count_ = 0;
+    std::size_t phase_cursor_ = 0;
+    std::uint16_t insertion_order_ = 0;
 };
 
 } // namespace booot

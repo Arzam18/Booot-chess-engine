@@ -1,6 +1,6 @@
-Booot 7.4 C++ Port — Stage 20 complete source inventory
+Booot 7.4 C++ Port — Stage 20.1 complete source inventory
 All paths are relative to repository root. Includes original Pascal project,
-C++ Android port, tests, build scripts, documentation, and Stage 20 metadata.
+C++ Android port, tests, build scripts, documentation, and Stage 20.1 metadata.
 
 .github/workflows/android-arm64.yml
 .gitignore

@@ -86,6 +86,7 @@ int main() {
     input.side[booot::Black][0] = 20;
     net.first_layer[0] = 64;
     net.first_layer[512] = 64;
+    net.first_layer_weight_sums[0] = 128;
     net.second_layer[0] = 4096;
     net.output_layer[0] = 3;
     net.output_bias = 5;

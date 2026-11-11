@@ -1,0 +1,25 @@
+Booot 7.4 C++ Port — Stage 19 change log
+
+Performance changes:
+- Compact reversible board Undo replaces per-move full Position snapshots.
+- Incremental NNUE move updater consumes compact board Undo, avoiding a before-
+  Position copy and full 64-square delta scan.
+- MovePicker and FV/NextFV move ordering now use fixed-capacity 256-entry buffers.
+- Alpha-beta failed quiet moves use fixed storage instead of per-node vector allocation.
+- Network loader precomputes the signed first-layer row sums required for exact
+  unsigned-input SDOT correction.
+- Added target-isolated ARMv8.2-A SDOT first-layer NNUE kernel with Android/Linux
+  HWCAP_ASIMDDP runtime dispatch and baseline NEON fallback.
+- UCI handshake reports the active first-layer NNUE backend.
+- Android ELF verifier checks for SDOT code generation when called by the build.
+
+Correctness safeguards:
+- Search pruning constants and feature behavior were not intentionally changed.
+- Stage 19 tests compare fixed move buffers against vector reference generation.
+- Compact make/unmake is tested on start, tactical, castling, en-passant, and
+  promotion positions.
+- SDOT unsigned-by-signed centering identity is tested over deterministic
+  randomized vectors.
+
+No device benchmark is claimed; compare NPS/nodes/time on the Galaxy A16 after
+building with the original production NNUE files.

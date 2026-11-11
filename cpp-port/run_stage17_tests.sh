@@ -30,7 +30,7 @@ WORKFLOW="$REPO/.github/workflows/android-arm64.yml"
 grep -q 'workflow_dispatch:' "$WORKFLOW"
 grep -q 'run: bash ./build_booot_android_arm64.sh' "$WORKFLOW"
 grep -q 'run: bash ./verify_android_arm64.sh ./booot-uci-android-arm64' "$WORKFLOW"
-grep -q 'READELF="$READELF" bash "$VERIFY_SCRIPT" "$OUTPUT"' "$ROOT/build_booot_android_arm64.sh"
+grep -q 'READELF="$READELF" OBJDUMP="$OBJDUMP" bash "$VERIFY_SCRIPT" "$OUTPUT"' "$ROOT/build_booot_android_arm64.sh"
 grep -q 'required ELF verifier script is missing' "$ROOT/build_booot_android_arm64.sh"
 
 # A missing verifier must fail early with an actionable message, not a late

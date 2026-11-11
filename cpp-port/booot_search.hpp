@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "booot_board.hpp"  // Search stack records use Position and Undo directly.
 #include "booot_eval.hpp"
 #include "booot_hash.hpp"
 #include "booot_move_order.hpp"

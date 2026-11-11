@@ -1,4 +1,5 @@
 #include "booot_uci.hpp"
+#include "booot_nnue.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -99,6 +100,8 @@ void UCIProtocol::handle_line(const std::string& line, bool& quit) {
         send_line("option name Threads type spin default 1 min 1 max 1");
         send_line("option name Move Overhead type spin default 20 min 0 max 5000");
         send_line("option name Clear Hash type button");
+        send_line(std::string("info string NNUE first-layer kernel: ") +
+                  nnue_first_layer_backend());
         send_line("uciok");
     } else if (command == "isready") {
         send_line("readyok");

@@ -45,6 +45,9 @@ struct Network {
     int model_size = 0;
     std::vector<int16_t> feature_weights;
     std::array<int8_t, kHidden1 * kHidden2> first_layer{};
+    // Per-output row sums let the AArch64 SDOT path transform unsigned
+    // activations into signed bytes without recomputing the correction term.
+    std::array<int32_t, kHidden2> first_layer_weight_sums{};
     std::array<int32_t, kHidden2 * kHidden3> second_layer{};
     std::array<int32_t, kHidden3> output_layer{};
     std::array<int16_t, kHalf> feature_bias{};
@@ -103,6 +106,8 @@ bool refresh_accumulators(const BoardView& board, const Network& net,
 // NEON (no dot-product instruction requirement); other targets use scalar code.
 int32_t forward_pass(int side_to_move, const Accumulator& acc,
                      const Network& net);
+// Describes the active first-layer inference backend for UCI diagnostics.
+const char* nnue_first_layer_backend() noexcept;
 
 // Converts the raw network output into Booot's centipawn-like score table.
 int32_t network_score(const Network& net, int32_t raw_output);
@@ -116,6 +121,11 @@ bool refresh_nnue_state(const Position& position, const NetworkSet& networks,
 bool update_nnue_state(const Position& before, const Position& after,
                        const NetworkSet& networks, NNUEState& state,
                        NNUEUndo& undo, std::string& error);
+// Search hot path: applies the move deltas already captured by compact board
+// Undo. It avoids copying the pre-move Position and scanning all 64 squares.
+bool update_nnue_state_for_move(const Undo& board_undo, const Position& after,
+                                const NetworkSet& networks, NNUEState& state,
+                                NNUEUndo& undo, std::string& error);
 void unmake_nnue_state(NNUEState& state, const NNUEUndo& undo) noexcept;
 
 // Runs the selected network for the side to move and converts its raw output

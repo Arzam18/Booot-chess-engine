@@ -517,6 +517,7 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
             std::find(quiet_checks.begin(), quiet_checks.end(), move) != quiet_checks.end())
             ++fv_quiet_checks_;
 
+        const int moving_piece = position.board[move_from(move)];
         Undo board_undo;
         NNUEUndo nnue_undo;
         if (!make_child(position, nnue, move, board_undo, nnue_undo)) {
@@ -524,7 +525,7 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
             continue;
         }
         stack_[ply].move = move;
-        stack_[ply].history_piece = board_undo.moving_piece;
+        stack_[ply].history_piece = moving_piece;
         stack_[ply].counter_piece = position.board[destination];
         stack_[ply].history_channel = static_cast<std::uint8_t>(
             (checked ? 2 : 0) | ((capture || promotion) ? 1 : 0));
@@ -776,6 +777,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
                 const bool capture = move_is_capture(move);
                 const bool promotion = move_is_promotion(move);
                 const int destination = move_to(move);
+                const int moving_piece = position.board[move_from(move)];
                 Undo board_undo;
                 NNUEUndo nnue_undo;
                 if (!make_child(position, nnue, move, board_undo, nnue_undo)) {
@@ -783,7 +785,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
                     continue;
                 }
                 stack_[ply].move = move;
-                stack_[ply].history_piece = board_undo.moving_piece;
+                stack_[ply].history_piece = moving_piece;
                 stack_[ply].counter_piece = position.board[destination];
                 stack_[ply].history_channel = static_cast<std::uint8_t>(
                     (checked ? 2 : 0) | ((capture || promotion) ? 1 : 0));
@@ -943,7 +945,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
             continue;
         }
         stack_[ply].move = move;
-        stack_[ply].history_piece = board_undo.moving_piece;
+        stack_[ply].history_piece = moving_piece;
         stack_[ply].counter_piece = position.board[destination];
         stack_[ply].history_channel = static_cast<std::uint8_t>(
             (parent_in_check ? 2 : 0) | ((capture || promotion) ? 1 : 0));
@@ -1075,6 +1077,8 @@ int SearchEngine::root_search(Position& position, NNUEState& nnue,
         const bool gives_check = is_move_check(move, check_info, position);
         const bool root_parent_in_check = in_check(
             position, static_cast<Color>(position.side_to_move));
+        const int moving_piece = position.board[move_from(move)];
+        const std::uint64_t parent_position_key = position.key;
         Undo board_undo;
         NNUEUndo nnue_undo;
         if (!make_child(position, nnue, move, board_undo, nnue_undo)) {
@@ -1083,19 +1087,18 @@ int SearchEngine::root_search(Position& position, NNUEState& nnue,
         }
 
         stack_[0].move = move;
-        stack_[0].history_piece = board_undo.moving_piece;
+        stack_[0].history_piece = moving_piece;
         stack_[0].counter_piece = position.board[move_to(move)];
         stack_[0].history_channel = static_cast<std::uint8_t>(
             (root_parent_in_check ? 2 : 0) |
             ((move_is_capture(move) || move_is_promotion(move)) ? 1 : 0));
         stack_[0].valid = true;
 
-        path_keys_.push_back(board_undo.key);
+        path_keys_.push_back(parent_position_key);
         pv_length_[1] = 0;
         int value = -kSearchInfinity;
         const int history_score = quiet
-            ? 2 * history_.quiet_history(board_undo.moving_piece,
-                                         move_to(move)) : 0;
+            ? 2 * history_.quiet_history(moving_piece, move_to(move)) : 0;
         int root_reduction = -1;
         if (quiet && depth >= 3 && searched >= 3) {
             // RootSearch applies R -= 2 only for a PV window, without the
