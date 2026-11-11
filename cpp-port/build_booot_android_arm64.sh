@@ -10,7 +10,7 @@ HOST_TAG="linux-x86_64"
 
 usage() {
   cat <<USAGE
-Booot 7.4 Android ARM64 self-contained UCI build (Stage 18)
+Booot 7.4 Android ARM64 self-contained UCI build (Stage 20.2)
 
 Usage:
   ANDROID_NDK_ROOT=/path/to/android-ndk-r30 ./build_booot_android_arm64.sh
@@ -86,9 +86,11 @@ TOOLCHAIN="$NDK_ROOT/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 CXX="$TOOLCHAIN/aarch64-linux-android${API}-clang++"
 READELF="$TOOLCHAIN/llvm-readelf"
 OBJDUMP="$TOOLCHAIN/llvm-objdump"
+NM="$TOOLCHAIN/llvm-nm"
 if [[ ! -x "$CXX" ]]; then echo "ERROR: Android compiler missing: $CXX" >&2; exit 1; fi
 if [[ ! -x "$READELF" ]]; then echo "ERROR: llvm-readelf missing: $READELF" >&2; exit 1; fi
 if [[ ! -x "$OBJDUMP" ]]; then echo "ERROR: llvm-objdump missing: $OBJDUMP" >&2; exit 1; fi
+if [[ ! -x "$NM" ]]; then echo "ERROR: llvm-nm missing: $NM" >&2; exit 1; fi
 
 SOURCES=(
   booot_nnue.cpp booot_nnue_move.cpp booot_bitboard.cpp booot_attacks.cpp
@@ -132,8 +134,37 @@ mkdir -p "$(dirname "$OUTPUT")"
 if [[ "$OUTPUT" != /* ]]; then
   OUTPUT="$(cd "$(dirname "$OUTPUT")" && pwd)/$(basename "$OUTPUT")"
 fi
+
+# Compile each translation unit to a stable object path before linking. This
+# ensures every object is explicitly passed to LLD and makes missing NNUE API
+# definitions visible before the final link, instead of relying on anonymous
+# compiler-driver temporary objects in a one-shot compile-and-link command.
+OBJECT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/booot-android-objects.XXXXXX")"
+trap 'rm -rf "$OBJECT_DIR"' EXIT
+OBJECTS=()
 cd "$ROOT"
-"$CXX" "${CXXFLAGS[@]}" "${SOURCES[@]/#/$ROOT/}" "${LDFLAGS[@]}" -o "$OUTPUT"
+for source in "${SOURCES[@]}"; do
+  object="$OBJECT_DIR/${source%.*}.o"
+  printf 'Compiling %s\n' "$source"
+  "$CXX" "${CXXFLAGS[@]}" -c "$ROOT/$source" -o "$object"
+  OBJECTS+=("$object")
+done
+
+NNUE_OBJECT="$OBJECT_DIR/booot_nnue.o"
+NNUE_SYMBOLS="$("$NM" -C --defined-only "$NNUE_OBJECT")"
+if ! grep -Fq 'booot::nnue_first_layer_backend()' <<<"$NNUE_SYMBOLS"; then
+  echo "ERROR: booot_nnue.cpp did not emit booot::nnue_first_layer_backend()." >&2
+  echo "Restore cpp-port/booot_nnue.cpp and cpp-port/booot_nnue.hpp from the same Stage 20.2 overlay." >&2
+  exit 1
+fi
+if ! grep -Fq 'booot::update_nnue_state_for_move(' <<<"$NNUE_SYMBOLS"; then
+  echo "ERROR: booot_nnue.cpp did not emit booot::update_nnue_state_for_move()." >&2
+  echo "Restore cpp-port/booot_nnue.cpp and cpp-port/booot_nnue.hpp from the same Stage 20.2 overlay." >&2
+  exit 1
+fi
+printf 'PASS: NNUE object defines both Android-required public symbols.\n'
+
+"$CXX" "${OBJECTS[@]}" "${LDFLAGS[@]}" -o "$OUTPUT"
 chmod 755 "$OUTPUT"
 
 BOOOT_NNUE_DIR="$REPO_ROOT" READELF="$READELF" OBJDUMP="$OBJDUMP" bash "$VERIFY_SCRIPT" "$OUTPUT"

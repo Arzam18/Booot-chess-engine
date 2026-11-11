@@ -109,3 +109,30 @@ Additional validation after this correction:
 - Android NDK GitHub Actions build: NOT RUN locally (NDK is not installed in
   this environment); the exact CI workflow must be rerun after applying the
   overlay. Production network files are still required by that workflow.
+
+
+## Stage 20.2 Android linker diagnostics and explicit objects
+
+The first Stage 20.1 Android retry reached the link step but LLD reported
+undefined references to `booot::nnue_first_layer_backend()` and
+`booot::update_nnue_state_for_move(...)`. Both functions are implemented in
+`booot_nnue.cpp` in the Stage 20 source set. To make the actual NDK object
+boundary observable and deterministic, the Android build script now compiles
+each C++/assembly source into a named temporary object, uses NDK `llvm-nm` to
+check that `booot_nnue.o` exports both required definitions, and then passes
+all objects explicitly to LLD. The temporary object directory is cleaned up
+when the script exits.
+
+This also detects a mixed or stale `booot_nnue.cpp` / `booot_nnue.hpp` source
+set before attempting the final link. The error message points to those files
+when either definition is absent.
+
+Validation for Stage 20.2:
+- Separate-object host compile and full link with `--gc-sections` and
+  `--no-undefined`: PASS; both NNUE symbols verified with `nm`.
+- GCC full Stage 1-15 regression and complete perft vectors: PASS.
+- Clang quick Stage 1-15 regression: PASS.
+- GCC Stage 17, Stage 18 fixture, Stage 19 compact-undo/SDOT tests: PASS.
+- GCC search/UCI ASan/UBSan: PASS.
+- NDK r30 / Android ARM64 CI: NOT RUN locally. The next CI run must confirm
+  that the NDK object symbols are present and the final Android ELF links.

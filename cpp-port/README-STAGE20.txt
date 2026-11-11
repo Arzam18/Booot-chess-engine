@@ -22,3 +22,12 @@ Stage 19 compact-undo compatibility files to avoid mixed-stage APIs.
 Additional validation: GCC full perft + Stage 1-15 tests PASS; Clang quick
 Stage 1-15 tests PASS; GCC ASan/UBSan search + UCI PASS. Android NDK build is
 not run locally because no NDK is installed here.
+
+
+Stage 20.2 Android link hardening: the NDK build now compiles each source file
+to an explicit object, checks the NNUE object with NDK llvm-nm for both
+`nnue_first_layer_backend()` and `update_nnue_state_for_move()`, then links the
+complete object list. This turns the prior opaque LLD undefined-symbol failure
+into a deterministic pre-link check and avoids relying on one-shot temporary
+objects. Host separate-object build, symbol preflight, and full link pass; the
+Android NDK workflow still needs to be rerun to verify the actual CI toolchain.

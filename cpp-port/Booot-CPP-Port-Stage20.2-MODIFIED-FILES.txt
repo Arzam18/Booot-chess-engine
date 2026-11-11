@@ -1,0 +1,21 @@
+Booot 7.4 C++ Port — Stage 20.2 Android-link-fix overlay
+All paths are relative to the repository root. Extract over the repository root.
+
+Build-script and documentation changes:
+README.md
+cpp-port/build_booot_android_arm64.sh
+cpp-port/BOOOT-CPP-PORT-STAGE20.md
+cpp-port/README-STAGE20.txt
+cpp-port/Booot-CPP-Port-Stage20-CHANGELOG.txt
+cpp-port/Booot-CPP-Port-Stage20.2-CHANGELOG.txt
+cpp-port/Booot-CPP-Port-Stage20.2-MODIFIED-FILES.txt
+cpp-port/Booot-CPP-Port-Stage20.2-SHA256SUMS.txt
+
+Required NNUE companion files are included to ensure this overlay has the
+matching public definitions expected by the Android build preflight:
+cpp-port/booot_nnue.cpp
+cpp-port/booot_nnue.hpp
+cpp-port/booot_nnue_move.cpp
+
+The three NNUE files above restore the Stage 20.1 source baseline; the actual
+Stage 20.2 code change is in build_booot_android_arm64.sh and its documentation.

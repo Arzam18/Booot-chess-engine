@@ -33,3 +33,23 @@ Stage 20.1 Android compile-error hardening:
   board and NNUE compatibility set to prevent mixed-stage headers/sources.
 - GCC full Stage 1-15/perft, Clang quick Stage 1-15, and GCC search/UCI
   ASan/UBSan checks pass. Android NDK build remains unverified locally.
+
+
+Stage 20.2 Android linker hardening:
+- Android C++ and assembly translation units are compiled separately into a
+  temporary object directory and that exact object list is passed to LLD.
+- NDK llvm-nm verifies that booot_nnue.o defines both public NNUE symbols
+  required by booot_uci.o and booot_nnue_move.o before the final link.
+- The temporary object directory is removed on success or failure.
+- A missing/stale NNUE implementation now produces a targeted pre-link error
+  identifying the required functions and companion files.
+
+Validation:
+- GCC full Stage 1-15 regression suite and deep perft: PASS.
+- Clang quick Stage 1-15 regression suite: PASS.
+- GCC Stage 17, Stage 18 embedded-network fixtures, and Stage 19 focused
+  compact-undo/SDOT tests: PASS.
+- GCC search/UCI ASan+UBSan tests: PASS.
+- Host build using the same separate-object / symbol-preflight / --no-undefined
+  link sequence: PASS.
+- Android NDK r30 job: NOT RUN locally; CI rerun is still required.

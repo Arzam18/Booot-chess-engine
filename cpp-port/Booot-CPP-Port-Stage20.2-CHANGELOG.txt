@@ -1,0 +1,22 @@
+Booot 7.4 C++ Port — Stage 20.2 change log
+
+Android NDK linker hardening:
+- Compile every listed translation unit to an explicit temporary object.
+- Verify with NDK llvm-nm that booot_nnue.o exports
+  booot::nnue_first_layer_backend() and
+  booot::update_nnue_state_for_move(...).
+- Link the explicit object list rather than relying on the compiler driver's
+  one-shot temporary object handling.
+- Clean the temporary object directory on all script exit paths.
+- Report a focused source-set error if either NNUE definition is absent.
+
+No chess-search behavior or NNUE arithmetic was changed in Stage 20.2.
+
+Validation:
+- GCC separate-object compile, NNUE symbol checks, and full host link with
+  --gc-sections and --no-undefined: PASS.
+- GCC full Stage 1-15 regression and complete perft vectors: PASS.
+- Clang quick Stage 1-15 regression: PASS.
+- GCC Stage 17, Stage 18 fixture, and Stage 19 tests: PASS.
+- GCC search/UCI ASan+UBSan: PASS.
+- Android NDK r30 CI build: NOT RUN locally; rerun GitHub Actions.

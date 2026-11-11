@@ -15,6 +15,12 @@ static_assert(std::endian::native == std::endian::little, "Booot NNUE files are 
 
 #if defined(__aarch64__)
 #include <arm_neon.h>
+#if defined(__ANDROID__) || defined(__linux__)
+#include <sys/auxv.h>
+#ifndef HWCAP_ASIMDDP
+#define HWCAP_ASIMDDP (1UL << 20)
+#endif
+#endif
 #endif
 
 namespace booot {
@@ -168,6 +174,39 @@ int32_t dot_u8_s8(const uint8_t* input, const int8_t* weights) {
         accum = vaddq_s32(accum, vpaddlq_s16(vmulq_s16(in_hi, wt_hi)));
     }
     return vaddvq_s32(accum);
+}
+
+// Optional ARMv8.2-A Dot Product kernel. The NNUE input activation is
+// unsigned [0,255], whereas SDOT consumes signed bytes. XOR with 0x80 maps
+// each activation to input-128; adding 128*sum(weights) restores the exact
+// unsigned-by-signed dot product. The target attribute keeps SDOT isolated
+// from the ARMv8-A baseline code, and HWCAP dispatch prevents illegal use on
+// older AArch64 CPUs.
+__attribute__((target("arch=armv8.2-a+dotprod")))
+int32_t dot_u8_s8_dotprod(const uint8_t* input, const int8_t* weights,
+                          int32_t weight_sum) {
+    int32x4_t accum = vdupq_n_s32(0);
+    const uint8x16_t sign_bias = vdupq_n_u8(0x80);
+    for (int i = 0; i < kHidden1; i += 16) {
+        const uint8x16_t input_u8 = vld1q_u8(input + i);
+        const int8x16_t input_s8 = vreinterpretq_s8_u8(veorq_u8(input_u8, sign_bias));
+        const int8x16_t weights_s8 = vld1q_s8(weights + i);
+        __asm__ volatile("sdot %0.4s, %1.16b, %2.16b"
+                         : "+w"(accum) : "w"(input_s8), "w"(weights_s8));
+    }
+    const int64_t corrected = static_cast<int64_t>(vaddvq_s32(accum)) +
+                              128LL * static_cast<int64_t>(weight_sum);
+    return wrap_i32(corrected);
+}
+
+bool cpu_has_dotprod() noexcept {
+#if defined(__ANDROID__) || defined(__linux__)
+    static const bool supported =
+        (getauxval(AT_HWCAP) & static_cast<unsigned long>(HWCAP_ASIMDDP)) != 0;
+    return supported;
+#else
+    return false;
+#endif
 }
 
 int32_t dot_i32_i32_8(const int32_t* input, const int32_t* weights) {
@@ -359,6 +398,13 @@ bool load_network_stream(std::istream& in, Network& out, std::string& error) {
         error = "Truncated first-layer weights";
         return false;
     }
+    for (int row = 0; row < kHidden2; ++row) {
+        int32_t sum = 0;
+        const std::size_t row_start = static_cast<std::size_t>(row) * kHidden1;
+        for (int column = 0; column < kHidden1; ++column)
+            sum += net.first_layer[row_start + static_cast<std::size_t>(column)];
+        net.first_layer_weight_sums[static_cast<std::size_t>(row)] = sum;
+    }
     if (!read_exact(in, net.second_layer.data(), net.second_layer.size() * sizeof(int32_t))) {
         error = "Truncated second-layer weights";
         return false;
@@ -451,8 +497,19 @@ int32_t forward_pass(int side_to_move, const Accumulator& acc,
 
     std::array<int32_t, kHidden2> first_relu{};
     const unsigned shift1 = static_cast<unsigned>(std::countr_zero(static_cast<unsigned>(net.w1)));
+#if defined(__aarch64__)
+    const bool use_dotprod = cpu_has_dotprod();
+#endif
     for (int j = 0; j < kHidden2; ++j) {
+#if defined(__aarch64__)
+        const std::size_t row_start = static_cast<std::size_t>(j) * kHidden1;
+        const int32_t sum = use_dotprod
+            ? dot_u8_s8_dotprod(inputs.data(), net.first_layer.data() + row_start,
+                                net.first_layer_weight_sums[static_cast<std::size_t>(j)])
+            : dot_u8_s8(inputs.data(), net.first_layer.data() + row_start);
+#else
         const int32_t sum = dot_u8_s8(inputs.data(), net.first_layer.data() + j * kHidden1);
+#endif
         const int32_t biased = add_wrap_i32(sum, net.first_bias[j]);
         first_relu[j] = clamp_u8(arithmetic_shift_right(biased, shift1));
     }
@@ -468,6 +525,14 @@ int32_t forward_pass(int side_to_move, const Accumulator& acc,
 
     return add_wrap_i32(dot_i32_i32_32(second_relu.data(), net.output_layer.data()),
                         net.output_bias);
+}
+
+const char* nnue_first_layer_backend() noexcept {
+#if defined(__aarch64__)
+    return cpu_has_dotprod() ? "AArch64 ARMv8.2-A SDOT" : "AArch64 NEON";
+#else
+    return "scalar reference";
+#endif
 }
 
 int32_t network_score(const Network& net, int32_t raw_output) {
@@ -698,6 +763,124 @@ bool update_nnue_state(const Position& before, const Position& after,
     candidate.valid = true;
     undo.previous = state;
     state = candidate;
+    error.clear();
+    return true;
+}
+
+bool update_nnue_state_for_move(const Undo& board_undo, const Position& after,
+                                const NetworkSet& networks, NNUEState& state,
+                                NNUEUndo& undo, std::string& error) {
+    if (!state.valid || state.position_key != board_undo.key) {
+        error = "NNUE state does not match the compact move undo's before-position";
+        return false;
+    }
+    if (board_undo.from_square < 0 || board_undo.from_square >= 64 ||
+        board_undo.to_square < 0 || board_undo.to_square >= 64 ||
+        board_undo.moving_piece == Empty || board_undo.placed_type < Pawn ||
+        board_undo.placed_type > King) {
+        error = "compact move undo is missing valid NNUE piece deltas";
+        return false;
+    }
+
+    const auto count_non_pawn = [&](Color color) {
+        const Bitboard non_pawns = after.pieces[Knight] | after.pieces[Bishop] |
+                                   after.pieces[Rook] | after.pieces[Queen];
+        return std::popcount(non_pawns & after.occupancy[color]);
+    };
+    const int new_white_count = count_non_pawn(White);
+    const int new_black_count = count_non_pawn(Black);
+    int old_white_count = new_white_count;
+    int old_black_count = new_black_count;
+    if (board_undo.captured_piece != Empty) {
+        const Color captured_color = board_undo.captured_piece > 0 ? White : Black;
+        if (std::abs(static_cast<int>(board_undo.captured_piece)) >= Knight &&
+            std::abs(static_cast<int>(board_undo.captured_piece)) <= Queen) {
+            if (captured_color == White) ++old_white_count;
+            else ++old_black_count;
+        }
+    }
+    if (std::abs(board_undo.moving_piece) == Pawn &&
+        board_undo.placed_type >= Knight && board_undo.placed_type <= Queen) {
+        if (board_undo.side_to_move == White) --old_white_count;
+        else --old_black_count;
+    }
+    const int old_slot = (old_white_count <= 2 && old_black_count <= 2) ? 0 :
+                         (old_white_count <= 4 && old_black_count <= 4) ? 1 : 2;
+    const int new_slot = (new_white_count <= 2 && new_black_count <= 2) ? 0 :
+                         (new_white_count <= 4 && new_black_count <= 4) ? 1 : 2;
+    if (state.network_slot != old_slot) {
+        error = "NNUE state/network selection does not match the before-position";
+        return false;
+    }
+    if (new_slot < 0 || new_slot >= kMaxNetworks || !networks.by_slot[new_slot]) {
+        error = "the destination Booot NNUE network slot is not loaded";
+        return false;
+    }
+
+    undo.previous = state;
+    auto rollback = [&]() {
+        state = undo.previous;
+        return false;
+    };
+    const BoardView after_view = make_board_view(after);
+    if (new_slot != old_slot) {
+        if (!refresh_accumulators(after_view, *networks.by_slot[new_slot],
+                                  state.accumulator, error))
+            return rollback();
+    } else {
+        const Network& net = *networks.by_slot[new_slot];
+        const int placed_piece = board_undo.side_to_move == White
+            ? static_cast<int>(board_undo.placed_type)
+            : -static_cast<int>(board_undo.placed_type);
+        const int rook_piece = board_undo.side_to_move == White ? Rook : -Rook;
+        for (int perspective = White; perspective <= Black; ++perspective) {
+            const int old_king = board_undo.king_square[perspective];
+            const int new_king = after.king_square[perspective];
+            if (old_king < 0 || old_king >= 64 || new_king < 0 || new_king >= 64) {
+                error = "NNUE move update requires both kings to remain on the board";
+                return rollback();
+            }
+
+            if (layout_signature(net, perspective, old_king) !=
+                layout_signature(net, perspective, new_king)) {
+                if (!build_one_accumulator(after_view, net, perspective,
+                                           state.accumulator.side[perspective], error))
+                    return rollback();
+                continue;
+            }
+
+            auto apply = [&](int piece, int square, int delta) {
+                return apply_feature_delta(net, perspective, new_king, piece,
+                    square, delta, state.accumulator.side[perspective], error);
+            };
+            if (!apply(board_undo.moving_piece, board_undo.from_square, -1))
+                return rollback();
+            if (board_undo.captured_piece != Empty &&
+                !apply(board_undo.captured_piece, board_undo.capture_square, -1))
+                return rollback();
+            if (!apply(placed_piece, board_undo.to_square, 1))
+                return rollback();
+            if (board_undo.is_castle) {
+                if (!apply(rook_piece, board_undo.rook_from, -1) ||
+                    !apply(rook_piece, board_undo.rook_to, 1))
+                    return rollback();
+            }
+
+            const std::uint8_t changed_rights = static_cast<std::uint8_t>(
+                board_undo.castling_rights ^ after.castling_rights);
+            for (const int bit : {1, 2, 4, 8}) {
+                if ((changed_rights & bit) == 0) continue;
+                const int delta = (after.castling_rights & bit) ? 1 : -1;
+                if (!apply_castle_delta(net, perspective, new_king, bit, delta,
+                                        state.accumulator.side[perspective], error))
+                    return rollback();
+            }
+        }
+    }
+
+    state.network_slot = new_slot;
+    state.position_key = after.key;
+    state.valid = true;
     error.clear();
     return true;
 }
