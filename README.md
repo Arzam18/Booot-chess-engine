@@ -19,6 +19,22 @@ Place the three original, unmodified network files in this repository root:
 
 They were not included in the recovered source archive, so this package does not fabricate or substitute them. The Android workflow requires all three original files and embeds their bytes verbatim into the ELF with assembler `.incbin`. It verifies that each embedded symbol has exactly the same size as the corresponding root file. The resulting Android executable does not need external `.nn` files at runtime.
 
+## Search and NNUE implementation (Stages 19–20)
+
+Stage 19 provides compact board undo records, incremental NNUE move updates,
+fixed-capacity move-order buffers, and an optional ARMv8.2-A SDOT first-layer
+kernel. SDOT is selected only when Android reports `HWCAP_ASIMDDP`; otherwise
+the ARMv8-A NEON fallback is retained. The UCI handshake reports the active
+first-layer kernel.
+
+Stage 20 corrects search-fidelity differences found by comparing the C++ port
+with the preserved Pascal source: TT static evaluations remain raw until they
+are scaled for the current position, and LMR history weighting, signed
+reductions, cut-node/PV adjustments, and re-search depth handling now follow
+the Pascal search path more closely. Host regression tests pass, but this is
+not yet a Pascal-vs-C++ strength-parity or Galaxy A16 playing-strength claim.
+See `cpp-port/BOOOT-CPP-PORT-STAGE20.md` for details and verification.
+
 ## Build the host UCI executable
 
 ```bash
