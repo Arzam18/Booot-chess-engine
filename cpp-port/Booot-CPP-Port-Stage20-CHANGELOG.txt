@@ -1,0 +1,24 @@
+Booot 7.4 C++ Port — Stage 20 change log
+
+Search-fidelity corrections:
+- SearchEngine::evaluate now returns raw evaluation scores. TT static-evaluation
+  entries retain raw NNUE scores; consuming nodes apply ScaleEval for the
+  current rule-50 clock and correction histories.
+- Improving detection and correction-history updates use the scaled static
+  evaluation before any TT-bound replacement, matching Pascal Tree[].StatEval.
+- LMR retains negative reductions and converts them to the original one-ply
+  deeper child search.
+- LMR now uses the Pascal GetHistoryValue weighting rather than the move-order
+  quiet-score weighting.
+- Restored the TT-PV/low-PV, hash-capture, cut-node, killer/counter, check,
+  quiet-singular, and history LMR adjustments.
+- Restored Pascal's post-LMR zero-window re-search depth adjustments.
+- Root LMR now applies its PV adjustment only for a PV window and retains the
+  +80 re-search extension through the final full-window search.
+
+Verification:
+- GCC and Clang complete Stage 1–15 host test suites: PASS.
+- GCC and Clang Stage 19 focused tests; AArch64 SDOT code-generation probe: PASS.
+- GCC ASan/UBSan Stage 1–8 plus additional search and UCI sanitizer tests: PASS.
+- Android NDK production build and Galaxy A16 playing-strength test: NOT RUN.
+  The Stage 19 source archive lacks the three original production networks.

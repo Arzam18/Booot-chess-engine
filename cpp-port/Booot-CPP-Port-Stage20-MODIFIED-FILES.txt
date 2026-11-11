@@ -1,0 +1,11 @@
+Booot 7.4 C++ Port — Stage 20 modified/new paths (relative to repository root)
+
+README.md
+cpp-port/booot_search.cpp
+cpp-port/booot_search.hpp
+cpp-port/BOOOT-CPP-PORT-STAGE20.md (new)
+cpp-port/README-STAGE20.txt (new)
+cpp-port/Booot-CPP-Port-Stage20-CHANGELOG.txt (new)
+cpp-port/Booot-CPP-Port-Stage20-MODIFIED-FILES.txt (new)
+cpp-port/Booot-CPP-Port-Stage20-FILE-LIST.txt (new)
+cpp-port/Booot-CPP-Port-Stage20-Archive-SHA256SUMS.txt (new)

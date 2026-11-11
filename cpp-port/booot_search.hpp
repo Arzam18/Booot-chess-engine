@@ -179,7 +179,7 @@ private:
                                    int static_eval, int depth, TTBound bound,
                                    Move best_move) noexcept;
     int lmr_reduction(int depth, int move_number, bool improving,
-                      bool pv_node, bool tt_pv, bool hash_capture,
+                      bool tt_pv, bool low_pv, bool cut_node, bool hash_capture,
                       bool killer_or_counter, bool gives_check,
                       bool quiet_singular, int history_score) const noexcept;
     void update_pv(int ply, Move move);

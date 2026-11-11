@@ -125,7 +125,7 @@ bool SearchEngine::evaluate(const Position& position, const NNUEState& nnue,
                             int& score) {
     if (!use_nnue_) {
         if (!diagnostic_evaluator_) { error_ = "No diagnostic evaluator is configured"; stopped_ = true; return false; }
-        score = scaled_eval(diagnostic_evaluator_(position), position);
+        score = diagnostic_evaluator_(position);
         return true;
     }
     EvaluationResult result;
@@ -135,7 +135,7 @@ bool SearchEngine::evaluate(const Position& position, const NNUEState& nnue,
         stopped_ = true;
         return false;
     }
-    score = scaled_eval(result.score, position);
+    score = result.score;
     return true;
 }
 
@@ -292,25 +292,29 @@ void SearchEngine::update_correction_history(const Position& position,
 }
 
 int SearchEngine::lmr_reduction(int depth, int move_number, bool improving,
-                                bool pv_node, bool tt_pv, bool hash_capture,
+                                bool tt_pv, bool low_pv, bool cut_node, bool hash_capture,
                                 bool killer_or_counter, bool gives_check,
                                 bool quiet_singular, int history_score) const noexcept {
+    // Match uSearch.LMRReduction and the adjustments in uSearch.Search.
+    // Keep the result signed: a negative R intentionally searches one ply
+    // deeper (D := newdepth + 1) in the original Pascal implementation.
     depth = std::clamp(depth, 1, 64);
     move_number = std::clamp(move_number, 1, 64);
     double r = (21.0 * std::log(static_cast<double>(depth))) *
                (21.0 * std::log(static_cast<double>(move_number))) + 250.0;
     if (!improving) r += r / 3.0;
     int reduction = static_cast<int>(r / 1000.0);
-    if (pv_node) {
-        if (!tt_pv) reduction -= 2;
+    if (tt_pv) {
+        if (!low_pv) reduction -= 2;
         --reduction;
     }
     if (hash_capture) ++reduction;
-    if (killer_or_counter) --reduction;
-    if (gives_check) --reduction;
     if (quiet_singular) --reduction;
+    if (cut_node) reduction += 2;
+    else if (killer_or_counter) --reduction;
+    if (gives_check) --reduction;
     reduction -= history_score / kHistoryLmrDivisor;
-    return std::clamp(reduction, 0, std::max(0, depth - 1));
+    return reduction;
 }
 
 void SearchEngine::update_pv(int ply, Move move) {
@@ -331,8 +335,9 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
     ++nodes_;
     if (should_stop()) return 0;
     if (ply >= kSearchMaxPly - 1) {
-        int score = 0;
-        return evaluate(position, nnue, score) ? score : 0;
+        int raw_score = 0;
+        return evaluate(position, nnue, raw_score)
+            ? scaled_eval(raw_score, position) : 0;
     }
 
     path_keys_.push_back(position.key);
@@ -377,7 +382,8 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
                 return 0;
             }
         }
-        best_value = static_eval;
+        const int scaled_static_eval = scaled_eval(static_eval, position);
+        best_value = scaled_static_eval;
         stack_[ply].static_eval = best_value;
         if (tt_hit && hash_value > -kSearchWinScore &&
             hash_value < kSearchWinScore &&
@@ -409,39 +415,53 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
 
     // Port of uSort.NextFV: hash move, ordered captures/promotions, quiet
     // checks at non-negative depth, or all legal evasions while in check.
-    std::vector<Move> ordered_moves;
-    std::vector<std::pair<Move, int>> scored_moves;
-    std::vector<Move> quiet_checks;
-    if (hash_move != 0 && is_pseudo_correct(hash_move, position)) {
+    // Pascal uses fixed MaxMoves buffers; avoid three heap-backed vectors and
+    // stable_sort allocations at every FV/qsearch node.
+    struct FVScoredMove { int score = 0; Move move = 0; std::uint16_t order = 0; };
+    std::array<FVScoredMove, MoveList::kCapacity> scored_moves{};
+    std::size_t scored_count = 0;
+    MoveList ordered_moves;
+    MoveList quiet_checks;
+    if (hash_move != 0 && is_pseudo_correct(hash_move, position))
         ordered_moves.push_back(hash_move);
-    }
 
     if (checked) {
-        std::vector<Move> evasions;
+        MoveList evasions;
         generate_legal_moves(position, evasions);
-        scored_moves.reserve(evasions.size());
+        std::uint16_t order = 0;
         for (Move move : evasions) {
-            if (move == hash_move) continue;
+            if (move == hash_move || scored_count >= scored_moves.size()) continue;
             const int score = move_is_capture(move)
                 ? history_.capture_score(position, move)
                 : history_.escape_score(position, move, ply, history_context(ply));
-            scored_moves.emplace_back(move, score);
+            scored_moves[scored_count++] = {score, move, order++};
         }
-        std::stable_sort(scored_moves.begin(), scored_moves.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
-        for (const auto& item : scored_moves) ordered_moves.push_back(item.first);
+        std::sort(scored_moves.begin(), scored_moves.begin() +
+                  static_cast<std::ptrdiff_t>(scored_count),
+            [](const FVScoredMove& a, const FVScoredMove& b) {
+                if (a.score != b.score) return a.score > b.score;
+                return a.order < b.order;
+            });
+        for (std::size_t i = 0; i < scored_count; ++i)
+            ordered_moves.push_back(scored_moves[i].move);
     } else {
-        std::vector<Move> pseudo_moves;
+        MoveList pseudo_moves;
         generate_pseudo_legal_moves(position, pseudo_moves);
-        scored_moves.reserve(pseudo_moves.size());
+        std::uint16_t order = 0;
         for (Move move : pseudo_moves) {
-            if (move == hash_move) continue;
-            if (move_is_capture(move) || move_is_promotion(move))
-                scored_moves.emplace_back(move, history_.capture_score(position, move));
+            if (move == hash_move ||
+                (!move_is_capture(move) && !move_is_promotion(move))) continue;
+            if (scored_count < scored_moves.size())
+                scored_moves[scored_count++] = {history_.capture_score(position, move), move, order++};
         }
-        std::stable_sort(scored_moves.begin(), scored_moves.end(),
-            [](const auto& a, const auto& b) { return a.second > b.second; });
-        for (const auto& item : scored_moves) ordered_moves.push_back(item.first);
+        std::sort(scored_moves.begin(), scored_moves.begin() +
+                  static_cast<std::ptrdiff_t>(scored_count),
+            [](const FVScoredMove& a, const FVScoredMove& b) {
+                if (a.score != b.score) return a.score > b.score;
+                return a.order < b.order;
+            });
+        for (std::size_t i = 0; i < scored_count; ++i)
+            ordered_moves.push_back(scored_moves[i].move);
 
         if (depth >= 0) {
             for (Move move : pseudo_moves) {
@@ -449,7 +469,7 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
                     continue;
                 if (is_move_check(move, check_info, position)) quiet_checks.push_back(move);
             }
-            ordered_moves.insert(ordered_moves.end(), quiet_checks.begin(), quiet_checks.end());
+            for (Move move : quiet_checks) ordered_moves.push_back(move);
         }
     }
 
@@ -504,7 +524,7 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
             continue;
         }
         stack_[ply].move = move;
-        stack_[ply].history_piece = board_undo.previous.board[move_from(move)];
+        stack_[ply].history_piece = board_undo.moving_piece;
         stack_[ply].counter_piece = position.board[destination];
         stack_[ply].history_channel = static_cast<std::uint8_t>(
             (checked ? 2 : 0) | ((capture || promotion) ? 1 : 0));
@@ -537,7 +557,8 @@ int SearchEngine::fv_search(Position& position, NNUEState& nnue,
     }
 
     if (checked && searched == 0) best_value = -kSearchMate + ply;
-    if (best_value == -kSearchInfinity && !checked) best_value = static_eval;
+    if (best_value == -kSearchInfinity && !checked)
+        best_value = scaled_eval(static_eval, position);
     tt_.store(position.key, best_value, q_depth, TTBound::Upper,
               best_move, static_eval, pv_node, ply);
     path_keys_.pop_back();
@@ -551,8 +572,9 @@ int SearchEngine::quiescence(Position& position, NNUEState& nnue,
     ++nodes_;
     if (should_stop()) return 0;
     if (ply >= kQMaxPly) {
-        int eval = 0;
-        return evaluate(position, nnue, eval) ? eval : 0;
+        int raw_eval = 0;
+        return evaluate(position, nnue, raw_eval)
+            ? scaled_eval(raw_eval, position) : 0;
     }
     path_keys_.push_back(position.key);
     const bool draw = (ply > 0 && is_draw(position, ply));
@@ -567,6 +589,7 @@ int SearchEngine::quiescence(Position& position, NNUEState& nnue,
             path_keys_.pop_back();
             return 0;
         }
+        static_eval = scaled_eval(static_eval, position);
         best = static_eval;
         if (best >= beta) { path_keys_.pop_back(); return best; }
         if (best > alpha) alpha = best;
@@ -615,8 +638,9 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
     ++nodes_;
     if (should_stop()) return 0;
     if (ply >= kSearchMaxPly - 1) {
-        int eval = 0;
-        return evaluate(position, nnue, eval) ? eval : 0;
+        int raw_eval = 0;
+        return evaluate(position, nnue, raw_eval)
+            ? scaled_eval(raw_eval, position) : 0;
     }
 
     path_keys_.push_back(position.key);
@@ -639,6 +663,9 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
         ? value_from_tt(tt_hit->value, ply, kSearchWinScore, kSearchInfinity)
         : -kSearchInfinity;
     const TTBound hash_bound = tt_hit ? tt_hit->bound : TTBound::None;
+    const bool low_pv = pv_node && hash_move != 0 && tt_hit &&
+                        (hash_bound == TTBound::Upper || hash_bound == TTBound::Exact) &&
+                        hash_depth >= depth;
     int static_eval = -kSearchInfinity;
 
     if (tt_hit) {
@@ -656,6 +683,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
 
     const bool checked = in_check(position, static_cast<Color>(position.side_to_move));
     int eval = -kSearchInfinity;
+    int scaled_static_eval = -kSearchInfinity;
     if (!checked) {
         if (static_eval == kSearchNoEval || static_eval == -kSearchInfinity) {
             if (!evaluate(position, nnue, static_eval)) {
@@ -663,7 +691,8 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
                 return 0;
             }
         }
-        eval = static_eval;
+        scaled_static_eval = scaled_eval(static_eval, position);
+        eval = scaled_static_eval;
         if (tt_hit && hash_value != -kSearchInfinity &&
             (hash_bound == TTBound::Exact ||
              (hash_bound == TTBound::Lower && hash_value > eval) ||
@@ -672,8 +701,10 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
     }
 
     const bool improving = ply >= 2 && stack_[ply - 2].static_eval > -kSearchInfinity &&
-        eval > stack_[ply - 2].static_eval; // correction histories follow in the next search stage
-    stack_[ply].static_eval = checked ? -kSearchInfinity : eval;
+        scaled_static_eval > stack_[ply - 2].static_eval;
+    // Pascal's Tree[ply].StatEval remains ScaleEval(raw NNUE), even when a
+    // compatible TT bound improves the local pruning value in Eval.
+    stack_[ply].static_eval = checked ? -kSearchInfinity : scaled_static_eval;
 
     // Booot razoring: a shallow, non-PV node far below alpha is reduced to qsearch.
     if (!pv_node && !checked && depth < 4 && eval <= alpha - kRazorMargin * depth) {
@@ -752,7 +783,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
                     continue;
                 }
                 stack_[ply].move = move;
-                stack_[ply].history_piece = board_undo.previous.board[move_from(move)];
+                stack_[ply].history_piece = board_undo.moving_piece;
                 stack_[ply].counter_piece = position.board[destination];
                 stack_[ply].history_channel = static_cast<std::uint8_t>(
                     (checked ? 2 : 0) | ((capture || promotion) ? 1 : 0));
@@ -808,8 +839,8 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
     int best_value = -kSearchInfinity;
     Move best_move = 0;
     int searched = 0;
-    std::vector<Move> failed_quiets;
-    failed_quiets.reserve(32);
+    std::array<Move, MoveList::kCapacity> failed_quiets{};
+    std::size_t failed_quiet_count = 0;
 
     while (auto candidate = picker.next()) {
         const Move move = *candidate;
@@ -840,7 +871,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
             position.non_pawn_material[position.side_to_move] > 0 && ply >= 2) {
             const int moving_piece = position.board[move_from(move)];
             const int base_reduction = lmr_reduction(depth, searched, improving,
-                false, false, false, false, false, false, 0);
+                false, false, false, false, false, false, false, 0);
             const int predicted_depth = std::max(1, new_depth - base_reduction);
             const int previous1 = history_.continuation_score(
                 context.previous1, moving_piece, static_cast<Square>(destination));
@@ -897,6 +928,13 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
         }
         new_depth = std::max(0, depth + extension - 1);
         const bool parent_in_check = checked;
+        const int moving_piece = position.board[move_from(move)];
+        const int history_score = quiet
+            ? 2 * history_.quiet_history(moving_piece, static_cast<Square>(destination)) +
+              history_.continuation_score(context.previous1, moving_piece, static_cast<Square>(destination)) +
+              history_.continuation_score(context.previous2, moving_piece, static_cast<Square>(destination)) +
+              history_.continuation_score(context.previous4, moving_piece, static_cast<Square>(destination))
+            : 0;
         Undo board_undo;
         NNUEUndo nnue_undo;
         if (!make_child(position, nnue, move, board_undo, nnue_undo)) {
@@ -905,7 +943,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
             continue;
         }
         stack_[ply].move = move;
-        stack_[ply].history_piece = board_undo.previous.board[move_from(move)];
+        stack_[ply].history_piece = board_undo.moving_piece;
         stack_[ply].counter_piece = position.board[destination];
         stack_[ply].history_channel = static_cast<std::uint8_t>(
             (parent_in_check ? 2 : 0) | ((capture || promotion) ? 1 : 0));
@@ -918,22 +956,28 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
             value = -alpha_beta(position, nnue, new_depth, -beta, -alpha,
                                 ply + 1, pv_node, true, 0, false);
         } else {
-            const int history_score = history_.quiet_score(
-                // This history lookup expects the pre-move position; construct a
-                // compact copy from the undo snapshot to keep piece indexing exact.
-                board_undo.previous, move, ply, context);
-            const int reduction = quiet && depth >= 3 && searched > 1
-                ? lmr_reduction(depth, searched, improving, pv_node, tt_pv,
-                               hash_capture, move == killer1 || move == killer2 || move == counter,
-                               gives_check, quiet_singular, history_score)
-                : 0;
-            const int reduced_depth = std::max(0, new_depth - reduction);
-            value = -alpha_beta(position, nnue, reduced_depth, -alpha - 1,
-                                -alpha, ply + 1, false, true, 0, true);
-            if (!stopped_ && reduction > 0 && value > alpha)
-                value = -alpha_beta(position, nnue, new_depth, -alpha - 1,
-                                    -alpha, ply + 1, false, true, 0, !cut_node);
-            if (!stopped_ && value > alpha && value < beta)
+            int lmr_depth = -kSearchMaxPly; // Pascal's D sentinel when LMR is inactive.
+            bool do_research = true;
+            if (quiet && depth >= 3 && searched > 1) {
+                const int reduction = lmr_reduction(depth, searched, improving,
+                    tt_pv, low_pv, cut_node, hash_capture,
+                    move == killer1 || move == killer2 || move == counter,
+                    gives_check, quiet_singular, history_score);
+                lmr_depth = reduction >= 0 ? new_depth - reduction : new_depth + 1;
+                lmr_depth = std::max(1, lmr_depth);
+                value = -alpha_beta(position, nnue, lmr_depth, -alpha - 1,
+                                    -alpha, ply + 1, false, true, 0, true);
+                do_research = !stopped_ && value > alpha && lmr_depth < new_depth;
+            }
+            if (!stopped_ && do_research) {
+                if (!pv_node && lmr_depth > 0 &&
+                    value < best_value + new_depth) --new_depth;
+                if (value > best_value + 50) ++new_depth;
+                if (new_depth > lmr_depth)
+                    value = -alpha_beta(position, nnue, new_depth, -alpha - 1,
+                                        -alpha, ply + 1, false, true, 0, !cut_node);
+            }
+            if (!stopped_ && pv_node && value > alpha && value < beta)
                 value = -alpha_beta(position, nnue, new_depth, -beta, -alpha,
                                     ply + 1, true, true);
         }
@@ -950,19 +994,20 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
                 if (alpha >= beta) {
                     if (quiet) {
                         const int bonus = MoveHistory::stat_bonus(depth);
-                        history_.update_quiet(board_undo.previous, move, bonus, ply, context);
-                        history_.update_killer_and_counter(board_undo.previous, move, ply, stack_[ply - 1].valid ? stack_[ply - 1].move : 0);
-                        for (Move failed : failed_quiets)
-                            history_.update_quiet(board_undo.previous, failed, -bonus / 2, ply, context);
+                        history_.update_quiet(position, move, bonus, ply, context);
+                        history_.update_killer_and_counter(position, move, ply, stack_[ply - 1].valid ? stack_[ply - 1].move : 0);
+                        for (std::size_t i = 0; i < failed_quiet_count; ++i)
+                            history_.update_quiet(position, failed_quiets[i], -bonus / 2, ply, context);
                     } else {
-                        history_.update_capture(board_undo.previous, move,
+                        history_.update_capture(position, move,
                                                 MoveHistory::stat_bonus(depth));
                     }
                     break;
                 }
             }
         }
-        if (quiet && move != best_move) failed_quiets.push_back(move);
+        if (quiet && move != best_move && failed_quiet_count < failed_quiets.size())
+            failed_quiets[failed_quiet_count++] = move;
         stack_[ply].valid = false;
     }
 
@@ -980,7 +1025,7 @@ int SearchEngine::alpha_beta(Position& position, NNUEState& nnue, int depth,
             bound = TTBound::Exact;
         tt_.store(position.key, best_value, depth, bound, best_move,
                   static_eval, tt_pv, ply);
-        update_correction_history(position, best_value, static_eval, depth,
+        update_correction_history(position, best_value, scaled_static_eval, depth,
                                   bound, best_move);
     }
     stack_[ply].valid = false;
@@ -992,6 +1037,7 @@ int SearchEngine::root_search(Position& position, NNUEState& nnue,
                               std::vector<Move>& root_moves, int depth,
                               int alpha, int beta, Move& best_move) {
     const int original_alpha = alpha;
+    const bool pv_node = (beta - alpha) > 1;
     best_move = 0;
     pv_length_[0] = 0;
     if (root_moves.empty()) {
@@ -1027,6 +1073,8 @@ int SearchEngine::root_search(Position& position, NNUEState& nnue,
         const bool promotion = move_is_promotion(move);
         const bool quiet = !capture && !promotion;
         const bool gives_check = is_move_check(move, check_info, position);
+        const bool root_parent_in_check = in_check(
+            position, static_cast<Color>(position.side_to_move));
         Undo board_undo;
         NNUEUndo nnue_undo;
         if (!make_child(position, nnue, move, board_undo, nnue_undo)) {
@@ -1035,45 +1083,54 @@ int SearchEngine::root_search(Position& position, NNUEState& nnue,
         }
 
         stack_[0].move = move;
-        stack_[0].history_piece = board_undo.previous.board[move_from(move)];
+        stack_[0].history_piece = board_undo.moving_piece;
         stack_[0].counter_piece = position.board[move_to(move)];
         stack_[0].history_channel = static_cast<std::uint8_t>(
-            (in_check(board_undo.previous, static_cast<Color>(board_undo.previous.side_to_move)) ? 2 : 0) |
+            (root_parent_in_check ? 2 : 0) |
             ((move_is_capture(move) || move_is_promotion(move)) ? 1 : 0));
         stack_[0].valid = true;
 
-        path_keys_.push_back(board_undo.previous.key);
+        path_keys_.push_back(board_undo.key);
         pv_length_[1] = 0;
         int value = -kSearchInfinity;
         const int history_score = quiet
-            ? 2 * history_.quiet_history(board_undo.previous.board[move_from(move)],
+            ? 2 * history_.quiet_history(board_undo.moving_piece,
                                          move_to(move)) : 0;
-        int reduction = 0;
+        int root_reduction = -1;
         if (quiet && depth >= 3 && searched >= 3) {
-            // Pascal RootSearch applies its PV adjustment as R -= 2 (rather
-            // than the non-root alpha-beta PV adjustment of -3).
+            // RootSearch applies R -= 2 only for a PV window, without the
+            // non-root cut/killer adjustments.
             const int root_base = lmr_reduction(depth, searched + 1, true,
-                false, true, hash_capture, false, gives_check, false,
+                false, false, false, hash_capture, false, gives_check, false,
                 history_score);
-            reduction = std::max(0, root_base - 2);
+            root_reduction = root_base - (pv_node ? 2 : 0);
         }
         if (searched == 0) {
             value = -alpha_beta(position, nnue, depth - 1, -beta, -alpha,
                                 1, true, true, 0, false);
         } else {
-            const int reduced_depth = std::max(0, depth - 1 - reduction);
-            if (reduction > 0) ++root_lmr_reductions_;
-            value = -alpha_beta(position, nnue, reduced_depth, -alpha - 1, -alpha,
-                                1, false, true, 0, true);
-            if (!stopped_ && reduction > 0 && value > alpha) {
-                ++root_lmr_researches_;
-                pv_length_[1] = 0;
-                value = -alpha_beta(position, nnue, depth - 1, -alpha - 1, -alpha,
+            bool do_research = true;
+            int lmr_depth = -1;
+            int root_child_depth = depth - 1;
+            if (root_reduction > 0) {
+                lmr_depth = std::max(1, root_child_depth - root_reduction);
+                ++root_lmr_reductions_;
+                value = -alpha_beta(position, nnue, lmr_depth, -alpha - 1, -alpha,
+                                    1, false, true, 0, true);
+                do_research = !stopped_ && value > alpha;
+            }
+            if (!stopped_ && do_research) {
+                if (root_reduction > 0 && value > best_value + 80) ++root_child_depth;
+                if (root_reduction > 0) {
+                    ++root_lmr_researches_;
+                    pv_length_[1] = 0;
+                }
+                value = -alpha_beta(position, nnue, root_child_depth, -alpha - 1, -alpha,
                                     1, false, true, 0, true);
             }
             if (!stopped_ && value > alpha && value < beta) {
                 pv_length_[1] = 0;
-                value = -alpha_beta(position, nnue, depth - 1, -beta, -alpha,
+                value = -alpha_beta(position, nnue, root_child_depth, -beta, -alpha,
                                     1, true, true, 0, false);
             }
         }
