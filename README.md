@@ -54,7 +54,7 @@ Run the repository-root GitHub Actions workflow manually:
 
 `Actions` → `Booot Android ARM64` → `Run workflow`.
 
-The workflow enters `cpp-port/`, compiles only the explicitly listed C++ sources plus the NNUE embedding assembly, verifies the resulting AArch64 ELF and all three embedded model sizes, and uploads the executable plus a SHA-256 manifest. Pascal sources at repository root are not part of the compile command.
+The workflow enters `cpp-port/`, compiles only the explicitly listed C++ sources plus the NNUE embedding assembly into separate temporary objects, checks that the NNUE object exports the two required public functions, links the explicit object list, verifies the resulting AArch64 ELF and all three embedded model sizes, and uploads the executable plus a SHA-256 manifest. Pascal sources at repository root are not part of the compile command.
 
 For a local NDK build:
 
